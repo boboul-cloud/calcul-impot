@@ -28,6 +28,7 @@ struct ExtractedTaxData {
 
     enum SourceType: String {
         case avisImposition = "Avis d'imposition"
+        case attestationFiscale = "Attestation fiscale"
         case bulletinSalaire = "Bulletin de salaire"
         case bulletinPension = "Bulletin de pension"
         case unknown = "Document"
@@ -50,14 +51,19 @@ enum AITaxParser {
         let prompt = """
         Analyse ce texte OCR d'un document fiscal français. Retourne un JSON avec ces champs :
         
-        - "total_brut": le montant "Total brut" ou "Total +" du document (nombre)
-        - "type": "pension", "salaire", "avis_imposition" ou "inconnu"
-        - "is_monthly": true si bulletin mensuel, false si annuel
-        - "revenu_net_imposable": (avis d'imposition uniquement) le "revenu net imposable"
-        - "revenu_brut_global": (avis d'imposition uniquement) le "revenu brut global"
+        - "total_brut": le montant "Total brut" ou "Total +" du document (nombre). Pour bulletin mensuel pension/salaire uniquement.
+        - "type": "pension", "salaire", "attestation_fiscale", "avis_imposition" ou "inconnu"
+          - "pension" : bulletin MENSUEL de pension (avec détail cotisations, CSG, etc.)
+          - "attestation_fiscale" : attestation fiscale ANNUELLE de pension ou salaire (donne le "montant imposable de l'année" directement)
+          - "salaire" : bulletin de salaire mensuel
+          - "avis_imposition" : avis d'imposition des impôts
+        - "is_monthly": true si bulletin mensuel, false si annuel ou attestation fiscale
+        - "montant_imposable": (attestation_fiscale uniquement) le "montant imposable de l'année" — c'est le montant ANNUEL à déclarer, déjà net de CSG.
+        - "revenu_net_imposable": (avis d'imposition uniquement) le "revenu net imposable" ou "revenu imposable". ATTENTION : c'est un REVENU (généralement plusieurs milliers d'euros), à ne PAS confondre avec le montant de l'impôt.
+        - "revenu_brut_global": (avis d'imposition uniquement) le "revenu brut global" ou "total des revenus et gains nets"
         - "situation": "couple" ou "celibataire" ou null
         - "parts": nombre de parts fiscales ou null
-        - "impot_net": impôt net ou prélèvement à la source ou null
+        - "impot_net": le montant de l'IMPÔT (intitulé "impôt sur le revenu net", "montant de votre impôt", "prélevé à la source", etc.). C'est un montant beaucoup plus petit que le revenu. Ne pas confondre avec le revenu net imposable.
         
         Réponds UNIQUEMENT avec le JSON.
         
@@ -99,6 +105,7 @@ enum AITaxParser {
         switch (result["type"] as? String ?? "") {
         case "pension": type = .bulletinPension
         case "salaire": type = .bulletinSalaire
+        case "attestation_fiscale": type = .attestationFiscale
         case "avis_imposition": type = .avisImposition
         default: type = .unknown
         }
@@ -117,8 +124,11 @@ enum AITaxParser {
         if type == .avisImposition {
             if let v = result["revenu_net_imposable"] as? Double { extracted.revenuNetImposable = v * multiplier }
             if let v = result["revenu_brut_global"] as? Double { extracted.revenuBrut = v * multiplier }
+        } else if type == .attestationFiscale {
+            // Attestation fiscale annuelle: montant imposable already net of CSG
+            if let v = result["montant_imposable"] as? Double { extracted.revenuBrut = v }
         } else {
-            // Pension/salary: montant imposable = total_brut × (1 - 5.9% CSG déductible)
+            // Monthly pension/salary bulletin: total_brut includes CSG → subtract it
             if let brut = result["total_brut"] as? Double {
                 let montantImposable = brut * (1 - 0.059)  // CSG déductible = 5.9%
                 extracted.revenuBrut = montantImposable * multiplier
@@ -143,7 +153,13 @@ enum TaxDocumentParser {
 
         // Detect source type — check most specific first
         let sourceType: ExtractedTaxData.SourceType
-        if fullText.contains("bulletin de pension")
+        if (fullText.contains("montant imposable") && fullText.contains("l'année") || fullText.contains("de l\u{2019}année"))
+            && (fullText.contains("déclaration préremplie") || fullText.contains("declaration preremplie")
+                || fullText.contains("attestation fiscale") || fullText.contains("vous devez déclarer")
+                || fullText.contains("vous devez declarer")
+                || fullText.contains("montant imposable de l'année") || fullText.contains("montant imposable de l\u{2019}année")) {
+            sourceType = .attestationFiscale
+        } else if fullText.contains("bulletin de pension")
             || (fullText.contains("pension") && fullText.contains("retraite"))
             || fullText.contains("retraitesdeletat")
             || fullText.contains("pension principale")
@@ -160,6 +176,27 @@ enum TaxDocumentParser {
         }
 
         var data = ExtractedTaxData(sourceType: sourceType, rawText: text)
+
+        // --- Attestation fiscale annuelle: montant imposable used directly ---
+        if sourceType == .attestationFiscale {
+            for line in lines {
+                let lower = line.lowercased()
+                if lower.contains("montant imposable") || lower.contains("vous devez déclarer") || lower.contains("vous devez declarer") {
+                    if let amount = extractMonetaryAmount(from: line) ?? extractAmount(from: line) {
+                        data.revenuBrut = amount
+                        break
+                    }
+                }
+            }
+            // Fallback: find the largest monetary amount
+            if data.revenuBrut == nil {
+                var fallbackMax: Double = 0
+                for line in lines {
+                    if let a = extractMonetaryAmount(from: line), a > fallbackMax { fallbackMax = a }
+                }
+                if fallbackMax > 0 { data.revenuBrut = fallbackMax }
+            }
+        }
 
         // --- Pension/salary bulletin: montant imposable = Total brut − CSG déductible ---
         // Collect all monetary amounts, find total brut (highest with centimes)

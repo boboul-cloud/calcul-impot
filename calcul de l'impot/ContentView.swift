@@ -189,13 +189,207 @@ enum TaxEngine {
     }
 }
 
+// MARK: - Km Allowance Calculator
+
+enum VehicleType: String, CaseIterable, Identifiable {
+    case car = "Voiture"
+    case moto = "Moto (> 50 cm³)"
+    case scooter = "Cyclomoteur (≤ 50 cm³)"
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .car: "car.fill"
+        case .moto: "bicycle"
+        case .scooter: "scooter"
+        }
+    }
+}
+
+enum KmBareme {
+    // Barème kilométrique 2025 (revenus 2024)
+    // Source: arrêté du 27/03/2025, applicable aux revenus 2024+
+
+    struct Tier {
+        let maxKm: Int     // upper bound of this tier (Int.max = no limit)
+        let coeff: Double  // d × coeff
+        let constant: Double // + constant
+    }
+
+    static func calculate(vehicleType: VehicleType, cv: Int, km: Int) -> Double {
+        let d = Double(km)
+        let tiers = tiers(for: vehicleType, cv: cv)
+        for tier in tiers {
+            if km <= tier.maxKm {
+                return d * tier.coeff + tier.constant
+            }
+        }
+        return 0
+    }
+
+    private static func tiers(for type: VehicleType, cv: Int) -> [Tier] {
+        switch type {
+        case .car:
+            switch cv {
+            case ...3:
+                return [Tier(maxKm: 5000, coeff: 0.529, constant: 0),
+                        Tier(maxKm: 20000, coeff: 0.316, constant: 1065),
+                        Tier(maxKm: .max, coeff: 0.370, constant: 0)]
+            case 4:
+                return [Tier(maxKm: 5000, coeff: 0.606, constant: 0),
+                        Tier(maxKm: 20000, coeff: 0.340, constant: 1330),
+                        Tier(maxKm: .max, coeff: 0.407, constant: 0)]
+            case 5:
+                return [Tier(maxKm: 5000, coeff: 0.636, constant: 0),
+                        Tier(maxKm: 20000, coeff: 0.357, constant: 1395),
+                        Tier(maxKm: .max, coeff: 0.427, constant: 0)]
+            case 6:
+                return [Tier(maxKm: 5000, coeff: 0.665, constant: 0),
+                        Tier(maxKm: 20000, coeff: 0.374, constant: 1457),
+                        Tier(maxKm: .max, coeff: 0.447, constant: 0)]
+            default:
+                return [Tier(maxKm: 5000, coeff: 0.697, constant: 0),
+                        Tier(maxKm: 20000, coeff: 0.394, constant: 1515),
+                        Tier(maxKm: .max, coeff: 0.470, constant: 0)]
+            }
+        case .moto:
+            switch cv {
+            case ...2:
+                return [Tier(maxKm: 3000, coeff: 0.395, constant: 0),
+                        Tier(maxKm: 6000, coeff: 0.099, constant: 891),
+                        Tier(maxKm: .max, coeff: 0.248, constant: 0)]
+            case 3...5:
+                return [Tier(maxKm: 3000, coeff: 0.468, constant: 0),
+                        Tier(maxKm: 6000, coeff: 0.082, constant: 1158),
+                        Tier(maxKm: .max, coeff: 0.275, constant: 0)]
+            default:
+                return [Tier(maxKm: 3000, coeff: 0.606, constant: 0),
+                        Tier(maxKm: 6000, coeff: 0.079, constant: 1583),
+                        Tier(maxKm: .max, coeff: 0.343, constant: 0)]
+            }
+        case .scooter:
+            return [Tier(maxKm: 3000, coeff: 0.315, constant: 0),
+                    Tier(maxKm: 6000, coeff: 0.079, constant: 711),
+                    Tier(maxKm: .max, coeff: 0.198, constant: 0)]
+        }
+    }
+
+    static func cvRange(for type: VehicleType) -> ClosedRange<Int> {
+        switch type {
+        case .car: 3...7
+        case .moto: 1...6
+        case .scooter: 1...1
+        }
+    }
+
+    static func cvLabel(for type: VehicleType, cv: Int) -> String {
+        switch type {
+        case .car:
+            if cv <= 3 { return "3 CV et moins" }
+            if cv >= 7 { return "7 CV et plus" }
+            return "\(cv) CV"
+        case .moto:
+            if cv <= 2 { return "1 ou 2 CV" }
+            if cv <= 5 { return "3 à 5 CV" }
+            return "Plus de 5 CV"
+        case .scooter:
+            return "—"
+        }
+    }
+}
+
+struct KmCalculatorView: View {
+    let onUse: (Double) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var vehicleType: VehicleType = .car
+    @State private var cv = 5
+    @State private var kmText = ""
+
+    private var km: Int { Int(kmText.replacingOccurrences(of: " ", with: "")) ?? 0 }
+    private var amount: Double { KmBareme.calculate(vehicleType: vehicleType, cv: cv, km: km) }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Véhicule") {
+                    Picker("Type", selection: $vehicleType) {
+                        ForEach(VehicleType.allCases) { t in
+                            Label(t.rawValue, systemImage: t.icon).tag(t)
+                        }
+                    }
+                    if vehicleType != .scooter {
+                        Stepper(value: $cv, in: KmBareme.cvRange(for: vehicleType)) {
+                            HStack {
+                                Text("Puissance fiscale")
+                                Spacer()
+                                Text(KmBareme.cvLabel(for: vehicleType, cv: cv))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+
+                Section("Distance") {
+                    HStack {
+                        TextField("ex : 12 000", text: $kmText)
+                            .keyboardType(.numberPad)
+                            .font(.title3.monospacedDigit())
+                        Text("km / an")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if km > 0 {
+                    Section("Résultat") {
+                        HStack {
+                            Text("Indemnités kilométriques")
+                            Spacer()
+                            Text(TaxEngine.cur(amount))
+                                .font(.title2.weight(.semibold))
+                                .foregroundStyle(.green)
+                        }
+                        Label("Barème officiel 2025 (revenus 2024). Ce montant inclut : carburant, entretien, assurance, dépréciation.", systemImage: "info.circle")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+
+                        Button {
+                            onUse(amount)
+                            dismiss()
+                        } label: {
+                            Label("Utiliser ce montant", systemImage: "checkmark.circle.fill")
+                                .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.green)
+                    }
+                }
+            }
+            .navigationTitle("Frais kilométriques")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Fermer") { dismiss() }
+                }
+            }
+            .onChange(of: vehicleType) { _, _ in
+                let range = KmBareme.cvRange(for: vehicleType)
+                if cv < range.lowerBound { cv = range.lowerBound }
+                if cv > range.upperBound { cv = range.upperBound }
+            }
+        }
+    }
+}
+
 // MARK: - View
 
 struct ContentView: View {
     @State private var configLoader = TaxConfigLoader()
     @State private var incomeText1 = ""
     @State private var incomeText2 = ""
-    @State private var isGrossSalary = true
+    @State private var incomeType: IncomeType = .netImposable
+    @State private var fraisReelsText1 = ""
+    @State private var fraisReelsText2 = ""
     @State private var situation: FamilySituation = .single
     @State private var children = 0
     @State private var emploiDomicileText = ""
@@ -211,33 +405,51 @@ struct ContentView: View {
     @State private var scanResult: ExtractedTaxData?
     @State private var pendingScanData: [Data]?
     @State private var openAIKey: String = AITaxParser.apiKey
+    @State private var showKmCalculator: KmTarget?
+
+    enum KmTarget: Identifiable {
+        case declarant1, declarant2
+        var id: Int { self == .declarant1 ? 1 : 2 }
+    }
 
     private var config: TaxConfig { configLoader.config }
 
     @FocusState private var focusedField: Field?
 
-    enum Field: Hashable { case income1, income2, emploi, donsAide, donsAutres }
+    enum Field: Hashable { case income1, income2, fraisReels1, fraisReels2, emploi, donsAide, donsAutres }
+
+    enum IncomeType: Int, CaseIterable {
+        case netImposable = 0      // Applies 10% deduction
+        case apresAbattement = 1   // Already deducted
+        case fraisReels = 2        // User specifies actual expenses
+    }
 
     private func parseAmount(_ text: String) -> Double {
         Double(text.replacingOccurrences(of: " ", with: "").replacingOccurrences(of: ",", with: ".")) ?? 0
     }
 
-    private func netImposable(_ gross: Double) -> Double {
-        guard isGrossSalary else { return gross }
-        return TaxEngine.netImposable(gross, config: config)
+    private func netImposable(_ gross: Double, fraisReels: Double = 0) -> Double {
+        switch incomeType {
+        case .apresAbattement:
+            return gross
+        case .fraisReels:
+            return max(0, gross - fraisReels)
+        case .netImposable:
+            return TaxEngine.netImposable(gross, config: config)
+        }
     }
 
     private var income: Double {
-        let a = netImposable(parseAmount(incomeText1))
-        let b = situation == .couple ? netImposable(parseAmount(incomeText2)) : 0
+        let a = netImposable(parseAmount(incomeText1), fraisReels: parseAmount(fraisReelsText1))
+        let b = situation == .couple ? netImposable(parseAmount(incomeText2), fraisReels: parseAmount(fraisReelsText2)) : 0
         return a + b
     }
 
-    private var abattementTotal: Double {
+    private var deductionTotal: Double {
         let g1 = parseAmount(incomeText1)
         let g2 = situation == .couple ? parseAmount(incomeText2) : 0
-        let n1 = netImposable(g1)
-        let n2 = netImposable(g2)
+        let n1 = netImposable(g1, fraisReels: parseAmount(fraisReelsText1))
+        let n2 = netImposable(g2, fraisReels: parseAmount(fraisReelsText2))
         return (g1 - n1) + (g2 - n2)
     }
 
@@ -307,6 +519,16 @@ struct ContentView: View {
                 if let data = scanResult {
                     ScanResultView(data: data) {
                         applyExtractedData(data, declarant: scanDeclarant)
+                    }
+                }
+            }
+            .sheet(item: $showKmCalculator) { target in
+                KmCalculatorView { amount in
+                    let text = String(Int(amount))
+                    if target == .declarant2 {
+                        fraisReelsText2 = text
+                    } else {
+                        fraisReelsText1 = text
                     }
                 }
             }
@@ -397,20 +619,64 @@ struct ContentView: View {
         }
     }
 
+    private func incomeLabel(declarant: Int?) -> String {
+        let base: String
+        switch incomeType {
+        case .netImposable, .fraisReels:
+            base = "Net imposable"
+        case .apresAbattement:
+            base = "Après abattement"
+        }
+        if let d = declarant {
+            return "\(base) — Déclarant \(d)"
+        }
+        return "\(base) annuel"
+    }
+
     private func applyExtractedData(_ data: ExtractedTaxData, declarant: Int) {
-        if let net = data.revenuNetImposable {
-            isGrossSalary = false
-            if declarant == 2 {
-                incomeText2 = String(Int(net))
+        let incomeValue: Double?
+        let type: IncomeType
+
+        if data.sourceType == .avisImposition {
+            let net = data.revenuNetImposable
+            let brut = data.revenuBrut
+
+            if let net, let brut, brut > 0, net > 0 {
+                if net >= brut * 0.5 {
+                    incomeValue = net
+                    type = .apresAbattement
+                } else {
+                    incomeValue = brut
+                    type = .netImposable
+                }
+            } else if let brut, brut > 0 {
+                incomeValue = brut
+                type = .netImposable
+            } else if let net, net > 0 {
+                incomeValue = net
+                type = .apresAbattement
             } else {
-                incomeText1 = String(Int(net))
+                incomeValue = nil
+                type = .netImposable
             }
+        } else if let net = data.revenuNetImposable {
+            incomeValue = net
+            type = .apresAbattement
         } else if let brut = data.revenuBrut {
-            isGrossSalary = true
+            incomeValue = brut
+            type = .netImposable
+        } else {
+            incomeValue = nil
+            type = .netImposable
+        }
+
+        if let incomeValue {
+            incomeType = type
+            let text = String(Int(incomeValue))
             if declarant == 2 {
-                incomeText2 = String(Int(brut))
+                incomeText2 = text
             } else {
-                incomeText1 = String(Int(brut))
+                incomeText1 = text
             }
         }
         // Only update situation/children from declarant 1 or single
@@ -628,14 +894,20 @@ struct ContentView: View {
                 Text("Type de revenu")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                Picker("", selection: $isGrossSalary) {
-                    Text("Salaire brut fiscal").tag(true)
-                    Text("Net imposable").tag(false)
+                Picker("", selection: $incomeType) {
+                    Text("Net imposable").tag(IncomeType.netImposable)
+                    Text("Après abattement").tag(IncomeType.apresAbattement)
+                    Text("Frais réels").tag(IncomeType.fraisReels)
                 }
                 .pickerStyle(.segmented)
-                if isGrossSalary {
+                if incomeType == .netImposable {
                     let d = config.deduction
                     Label("Abattement de \(Int(d.rate * 100)) % appliqué automatiquement (min \(TaxEngine.cur(d.min)), max \(TaxEngine.cur(d.max)))", systemImage: "info.circle")
+                        .font(.caption2)
+                        .foregroundStyle(.blue)
+                }
+                if incomeType == .fraisReels {
+                    Label("Saisissez votre revenu net imposable et vos frais réels. Les frais seront déduits à la place de l'abattement 10 %.", systemImage: "info.circle")
                         .font(.caption2)
                         .foregroundStyle(.blue)
                 }
@@ -643,31 +915,67 @@ struct ContentView: View {
 
             // Income
             VStack(alignment: .leading, spacing: 6) {
-                Text(situation == .couple
-                     ? (isGrossSalary ? "Salaire brut fiscal — Déclarant 1" : "Revenu net imposable — Déclarant 1")
-                     : (isGrossSalary ? "Salaire brut fiscal annuel" : "Revenu net imposable annuel"))
+                Text(incomeLabel(declarant: situation == .couple ? 1 : nil))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                 incomeField(text: $incomeText1, field: .income1)
             }
 
+            if incomeType == .fraisReels {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text(situation == .couple ? "Frais réels — Déclarant 1" : "Frais réels annuels")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Button {
+                            showKmCalculator = .declarant1
+                        } label: {
+                            Label("Frais km", systemImage: "car.fill")
+                                .font(.caption)
+                        }
+                    }
+                    incomeField(text: $fraisReelsText1, field: .fraisReels1)
+                }
+            }
+
             if situation == .couple {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(isGrossSalary ? "Salaire brut fiscal — Déclarant 2" : "Revenu net imposable — Déclarant 2")
+                    Text(incomeLabel(declarant: 2))
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                     incomeField(text: $incomeText2, field: .income2)
+                }
+
+                if incomeType == .fraisReels {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text("Frais réels — Déclarant 2")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button {
+                                showKmCalculator = .declarant2
+                            } label: {
+                                Label("Frais km", systemImage: "car.fill")
+                                    .font(.caption)
+                            }
+                        }
+                        incomeField(text: $fraisReelsText2, field: .fraisReels2)
+                    }
                 }
             }
 
             // Summary after deduction
             if income > 0 {
                 VStack(alignment: .leading, spacing: 4) {
-                    if isGrossSalary && abattementTotal > 0 {
+                    if incomeType != .apresAbattement && deductionTotal > 0 {
                         HStack(spacing: 4) {
                             Image(systemName: "minus.circle.fill")
                                 .foregroundStyle(.orange)
-                            Text("Abattement 10 % : −\(TaxEngine.cur(abattementTotal))")
+                            Text(incomeType == .fraisReels
+                                 ? "Frais réels : −\(TaxEngine.cur(deductionTotal))"
+                                 : "Abattement 10 % : −\(TaxEngine.cur(deductionTotal))")
                         }
                         .font(.footnote)
                         .foregroundStyle(.secondary)
