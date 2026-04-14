@@ -387,9 +387,12 @@ struct ContentView: View {
     @State private var configLoader = TaxConfigLoader()
     @State private var incomeText1 = ""
     @State private var incomeText2 = ""
-    @State private var incomeType: IncomeType = .netImposable
+    @State private var deductionType1: DeductionType = .abattement
+    @State private var deductionType2: DeductionType = .abattement
     @State private var fraisReelsText1 = ""
     @State private var fraisReelsText2 = ""
+    @State private var sourceText1 = ""
+    @State private var sourceText2 = ""
     @State private var situation: FamilySituation = .single
     @State private var children = 0
     @State private var emploiDomicileText = ""
@@ -416,40 +419,43 @@ struct ContentView: View {
 
     @FocusState private var focusedField: Field?
 
-    enum Field: Hashable { case income1, income2, fraisReels1, fraisReels2, emploi, donsAide, donsAutres }
+    enum Field: Hashable { case income1, income2, fraisReels1, fraisReels2, source1, source2, emploi, donsAide, donsAutres }
 
-    enum IncomeType: Int, CaseIterable {
-        case netImposable = 0      // Applies 10% deduction
-        case apresAbattement = 1   // Already deducted
-        case fraisReels = 2        // User specifies actual expenses
+    enum DeductionType: Int, CaseIterable {
+        case abattement = 0    // Standard 10% deduction
+        case fraisReels = 1    // User specifies actual expenses
     }
 
     private func parseAmount(_ text: String) -> Double {
         Double(text.replacingOccurrences(of: " ", with: "").replacingOccurrences(of: ",", with: ".")) ?? 0
     }
 
-    private func netImposable(_ gross: Double, fraisReels: Double = 0) -> Double {
-        switch incomeType {
-        case .apresAbattement:
-            return gross
+    private func netImposable(_ gross: Double, deductionType: DeductionType, fraisReels: Double = 0) -> Double {
+        switch deductionType {
         case .fraisReels:
             return max(0, gross - fraisReels)
-        case .netImposable:
+        case .abattement:
             return TaxEngine.netImposable(gross, config: config)
         }
     }
 
     private var income: Double {
-        let a = netImposable(parseAmount(incomeText1), fraisReels: parseAmount(fraisReelsText1))
-        let b = situation == .couple ? netImposable(parseAmount(incomeText2), fraisReels: parseAmount(fraisReelsText2)) : 0
+        let a = netImposable(parseAmount(incomeText1), deductionType: deductionType1, fraisReels: parseAmount(fraisReelsText1))
+        let b = situation == .couple ? netImposable(parseAmount(incomeText2), deductionType: deductionType2, fraisReels: parseAmount(fraisReelsText2)) : 0
         return a + b
+    }
+
+    private var totalWithholding: Double {
+        let s1 = parseAmount(sourceText1)
+        let s2 = situation == .couple ? parseAmount(sourceText2) : 0
+        return s1 + s2
     }
 
     private var deductionTotal: Double {
         let g1 = parseAmount(incomeText1)
         let g2 = situation == .couple ? parseAmount(incomeText2) : 0
-        let n1 = netImposable(g1, fraisReels: parseAmount(fraisReelsText1))
-        let n2 = netImposable(g2, fraisReels: parseAmount(fraisReelsText2))
+        let n1 = netImposable(g1, deductionType: deductionType1, fraisReels: parseAmount(fraisReelsText1))
+        let n2 = netImposable(g2, deductionType: deductionType2, fraisReels: parseAmount(fraisReelsText2))
         return (g1 - n1) + (g2 - n2)
     }
 
@@ -619,23 +625,9 @@ struct ContentView: View {
         }
     }
 
-    private func incomeLabel(declarant: Int?) -> String {
-        let base: String
-        switch incomeType {
-        case .netImposable, .fraisReels:
-            base = "Net imposable"
-        case .apresAbattement:
-            base = "Après abattement"
-        }
-        if let d = declarant {
-            return "\(base) — Déclarant \(d)"
-        }
-        return "\(base) annuel"
-    }
-
     private func applyExtractedData(_ data: ExtractedTaxData, declarant: Int) {
         let incomeValue: Double?
-        let type: IncomeType
+        let deductionType: DeductionType
 
         if data.sourceType == .avisImposition {
             let net = data.revenuNetImposable
@@ -643,40 +635,44 @@ struct ContentView: View {
 
             if let net, let brut, brut > 0, net > 0 {
                 if net >= brut * 0.5 {
+                    // Already after deduction — use frais réels with 0 to pass through
                     incomeValue = net
-                    type = .apresAbattement
+                    deductionType = .fraisReels
                 } else {
                     incomeValue = brut
-                    type = .netImposable
+                    deductionType = .abattement
                 }
             } else if let brut, brut > 0 {
                 incomeValue = brut
-                type = .netImposable
+                deductionType = .abattement
             } else if let net, net > 0 {
                 incomeValue = net
-                type = .apresAbattement
+                deductionType = .fraisReels
             } else {
                 incomeValue = nil
-                type = .netImposable
+                deductionType = .abattement
             }
         } else if let net = data.revenuNetImposable {
             incomeValue = net
-            type = .apresAbattement
+            deductionType = .fraisReels
         } else if let brut = data.revenuBrut {
             incomeValue = brut
-            type = .netImposable
+            deductionType = .abattement
         } else {
             incomeValue = nil
-            type = .netImposable
+            deductionType = .abattement
         }
 
         if let incomeValue {
-            incomeType = type
             let text = String(Int(incomeValue))
             if declarant == 2 {
+                deductionType2 = deductionType
                 incomeText2 = text
+                if deductionType == .fraisReels { fraisReelsText2 = "" }
             } else {
+                deductionType1 = deductionType
                 incomeText1 = text
+                if deductionType == .fraisReels { fraisReelsText1 = "" }
             }
         }
         // Only update situation/children from declarant 1 or single
@@ -889,93 +885,43 @@ struct ContentView: View {
                 .font(.headline)
                 .foregroundStyle(.secondary)
 
-            // Income type toggle
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Type de revenu")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                Picker("", selection: $incomeType) {
-                    Text("Net imposable").tag(IncomeType.netImposable)
-                    Text("Après abattement").tag(IncomeType.apresAbattement)
-                    Text("Frais réels").tag(IncomeType.fraisReels)
-                }
-                .pickerStyle(.segmented)
-                if incomeType == .netImposable {
-                    let d = config.deduction
-                    Label("Abattement de \(Int(d.rate * 100)) % appliqué automatiquement (min \(TaxEngine.cur(d.min)), max \(TaxEngine.cur(d.max)))", systemImage: "info.circle")
-                        .font(.caption2)
-                        .foregroundStyle(.blue)
-                }
-                if incomeType == .fraisReels {
-                    Label("Saisissez votre revenu net imposable et vos frais réels. Les frais seront déduits à la place de l'abattement 10 %.", systemImage: "info.circle")
-                        .font(.caption2)
-                        .foregroundStyle(.blue)
-                }
-            }
+            // Declarant 1
+            declarantIncomeSection(
+                declarant: situation == .couple ? 1 : nil,
+                incomeText: $incomeText1,
+                deductionType: $deductionType1,
+                fraisReelsText: $fraisReelsText1,
+                sourceText: $sourceText1,
+                incomeFieldTag: .income1,
+                fraisFieldTag: .fraisReels1,
+                sourceFieldTag: .source1,
+                kmTarget: .declarant1
+            )
 
-            // Income
-            VStack(alignment: .leading, spacing: 6) {
-                Text(incomeLabel(declarant: situation == .couple ? 1 : nil))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                incomeField(text: $incomeText1, field: .income1)
-            }
-
-            if incomeType == .fraisReels {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text(situation == .couple ? "Frais réels — Déclarant 1" : "Frais réels annuels")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button {
-                            showKmCalculator = .declarant1
-                        } label: {
-                            Label("Frais km", systemImage: "car.fill")
-                                .font(.caption)
-                        }
-                    }
-                    incomeField(text: $fraisReelsText1, field: .fraisReels1)
-                }
-            }
-
+            // Declarant 2
             if situation == .couple {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(incomeLabel(declarant: 2))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    incomeField(text: $incomeText2, field: .income2)
-                }
-
-                if incomeType == .fraisReels {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text("Frais réels — Déclarant 2")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Button {
-                                showKmCalculator = .declarant2
-                            } label: {
-                                Label("Frais km", systemImage: "car.fill")
-                                    .font(.caption)
-                            }
-                        }
-                        incomeField(text: $fraisReelsText2, field: .fraisReels2)
-                    }
-                }
+                Divider()
+                declarantIncomeSection(
+                    declarant: 2,
+                    incomeText: $incomeText2,
+                    deductionType: $deductionType2,
+                    fraisReelsText: $fraisReelsText2,
+                    sourceText: $sourceText2,
+                    incomeFieldTag: .income2,
+                    fraisFieldTag: .fraisReels2,
+                    sourceFieldTag: .source2,
+                    kmTarget: .declarant2
+                )
             }
 
             // Summary after deduction
             if income > 0 {
                 VStack(alignment: .leading, spacing: 4) {
-                    if incomeType != .apresAbattement && deductionTotal > 0 {
+                    if deductionTotal > 0 {
                         HStack(spacing: 4) {
                             Image(systemName: "minus.circle.fill")
                                 .foregroundStyle(.orange)
-                            Text(incomeType == .fraisReels
-                                 ? "Frais réels : −\(TaxEngine.cur(deductionTotal))"
-                                 : "Abattement 10 % : −\(TaxEngine.cur(deductionTotal))")
+                            Text("Déductions : −\(TaxEngine.cur(deductionTotal))")
                         }
                         .font(.footnote)
                         .foregroundStyle(.secondary)
@@ -1142,15 +1088,24 @@ struct ContentView: View {
         // Main result
         VStack(spacing: 16) {
             VStack(spacing: 4) {
-                Text("Impôt à payer")
+                let remainder = totalWithholding > 0 ? r.taxAfterCredits - totalWithholding : r.taxAfterCredits
+                Text(totalWithholding > 0
+                     ? (remainder >= 0 ? "Reste à payer" : "Trop-perçu")
+                     : "Impôt à payer")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
-                Text(TaxEngine.cur(r.taxAfterCredits))
+                Text(TaxEngine.cur(abs(remainder)))
                     .font(.system(size: 42, weight: .bold, design: .rounded))
                     .foregroundStyle(
-                        LinearGradient(colors: [.blue, .indigo], startPoint: .leading, endPoint: .trailing)
+                        remainder < 0
+                        ? LinearGradient(colors: [.green, .mint], startPoint: .leading, endPoint: .trailing)
+                        : LinearGradient(colors: [.blue, .indigo], startPoint: .leading, endPoint: .trailing)
                     )
-                if r.taxAfterCredits > 0 {
+                if totalWithholding > 0 {
+                    Text("Impôt total : \(TaxEngine.cur(r.taxAfterCredits))")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                } else if r.taxAfterCredits > 0 {
                     Text("\(TaxEngine.cur(r.taxAfterCredits / 12)) / mois")
                         .font(.callout)
                         .foregroundStyle(.secondary)
@@ -1236,6 +1191,22 @@ struct ContentView: View {
                     .foregroundStyle(.blue)
             }
 
+            if totalWithholding > 0 {
+                Divider()
+
+                row("Prélèvement à la source déjà réglé", value: totalWithholding, color: .green, prefix: "−")
+
+                let remainder = r.taxAfterCredits - totalWithholding
+                HStack {
+                    Text(remainder >= 0 ? "Reste à payer" : "Trop-perçu (remboursement)")
+                        .fontWeight(.semibold)
+                    Spacer()
+                    Text(TaxEngine.cur(abs(remainder)))
+                        .font(.title3.weight(.bold).monospacedDigit())
+                        .foregroundStyle(remainder >= 0 ? .orange : .green)
+                }
+            }
+
             HStack(spacing: 4) {
                 Text("\(config.label) (\(config.legalReference))")
                 if configLoader.isRemote {
@@ -1250,6 +1221,74 @@ struct ContentView: View {
         .background(.background)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .shadow(color: .black.opacity(0.06), radius: 8, y: 4)
+    }
+
+    // MARK: - Declarant Section
+
+    @ViewBuilder
+    private func declarantIncomeSection(
+        declarant: Int?,
+        incomeText: Binding<String>,
+        deductionType: Binding<DeductionType>,
+        fraisReelsText: Binding<String>,
+        sourceText: Binding<String>,
+        incomeFieldTag: Field,
+        fraisFieldTag: Field,
+        sourceFieldTag: Field,
+        kmTarget: KmTarget
+    ) -> some View {
+        let label = declarant.map { "Déclarant \($0)" } ?? ""
+
+        // Income
+        VStack(alignment: .leading, spacing: 6) {
+            Text(declarant != nil ? "Net imposable — \(label)" : "Net imposable annuel")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            incomeField(text: incomeText, field: incomeFieldTag)
+        }
+
+        // Deduction type picker
+        VStack(alignment: .leading, spacing: 8) {
+            Picker(declarant != nil ? "Déduction — \(label)" : "Déduction", selection: deductionType) {
+                Text("Abattement 10 %").tag(DeductionType.abattement)
+                Text("Frais réels").tag(DeductionType.fraisReels)
+            }
+            .pickerStyle(.segmented)
+
+            if deductionType.wrappedValue == .abattement {
+                let d = config.deduction
+                Label("Abattement de \(Int(d.rate * 100)) % appliqué automatiquement (min \(TaxEngine.cur(d.min)), max \(TaxEngine.cur(d.max)))", systemImage: "info.circle")
+                    .font(.caption2)
+                    .foregroundStyle(.blue)
+            }
+        }
+
+        // Frais réels (if selected)
+        if deductionType.wrappedValue == .fraisReels {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text(declarant != nil ? "Frais réels — \(label)" : "Frais réels annuels")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button {
+                        showKmCalculator = kmTarget
+                    } label: {
+                        Label("Frais km", systemImage: "car.fill")
+                            .font(.caption)
+                    }
+                }
+                incomeField(text: fraisReelsText, field: fraisFieldTag)
+            }
+        }
+
+        // Withholding tax
+        VStack(alignment: .leading, spacing: 6) {
+            Text(declarant != nil ? "Prélèvement à la source — \(label)" : "Prélèvement à la source déjà réglé")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+            incomeField(text: sourceText, field: sourceFieldTag)
+        }
     }
 
     // MARK: - Helpers
