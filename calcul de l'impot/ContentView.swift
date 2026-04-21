@@ -440,14 +440,8 @@ enum VehicleType: String, CaseIterable, Identifiable {
 }
 
 enum KmBareme {
-    // Barème kilométrique 2026 (revenus 2025)
-    // Keep coefficients here aligned with the official yearly publication.
-
-    static let scaleYear = 2026
-    static let revenueYear = 2025
-
-    static var label: String {
-        "Barème officiel \(scaleYear) (revenus \(revenueYear))."
+    static func label(config: KmAllowanceConfig) -> String {
+        "Barème officiel \(config.scaleYear) (revenus \(config.revenueYear))."
     }
 
     struct Tier {
@@ -456,9 +450,9 @@ enum KmBareme {
         let constant: Double // + constant
     }
 
-    static func calculate(vehicleType: VehicleType, cv: Int, km: Int) -> Double {
+    static func calculate(vehicleType: VehicleType, cv: Int, km: Int, config: KmAllowanceConfig) -> Double {
         let d = Double(km)
-        let tiers = tiers(for: vehicleType, cv: cv)
+        let tiers = tiers(for: vehicleType, cv: cv, config: config)
         for tier in tiers {
             if km <= tier.maxKm {
                 return d * tier.coeff + tier.constant
@@ -467,78 +461,43 @@ enum KmBareme {
         return 0
     }
 
-    private static func tiers(for type: VehicleType, cv: Int) -> [Tier] {
-        switch type {
-        case .car:
-            switch cv {
-            case ...3:
-                return [Tier(maxKm: 5000, coeff: 0.529, constant: 0),
-                        Tier(maxKm: 20000, coeff: 0.316, constant: 1065),
-                        Tier(maxKm: .max, coeff: 0.370, constant: 0)]
-            case 4:
-                return [Tier(maxKm: 5000, coeff: 0.606, constant: 0),
-                        Tier(maxKm: 20000, coeff: 0.340, constant: 1330),
-                        Tier(maxKm: .max, coeff: 0.407, constant: 0)]
-            case 5:
-                return [Tier(maxKm: 5000, coeff: 0.636, constant: 0),
-                        Tier(maxKm: 20000, coeff: 0.357, constant: 1395),
-                        Tier(maxKm: .max, coeff: 0.427, constant: 0)]
-            case 6:
-                return [Tier(maxKm: 5000, coeff: 0.665, constant: 0),
-                        Tier(maxKm: 20000, coeff: 0.374, constant: 1457),
-                        Tier(maxKm: .max, coeff: 0.447, constant: 0)]
-            default:
-                return [Tier(maxKm: 5000, coeff: 0.697, constant: 0),
-                        Tier(maxKm: 20000, coeff: 0.394, constant: 1515),
-                        Tier(maxKm: .max, coeff: 0.470, constant: 0)]
-            }
-        case .moto:
-            switch cv {
-            case ...2:
-                return [Tier(maxKm: 3000, coeff: 0.395, constant: 0),
-                        Tier(maxKm: 6000, coeff: 0.099, constant: 891),
-                        Tier(maxKm: .max, coeff: 0.248, constant: 0)]
-            case 3...5:
-                return [Tier(maxKm: 3000, coeff: 0.468, constant: 0),
-                        Tier(maxKm: 6000, coeff: 0.082, constant: 1158),
-                        Tier(maxKm: .max, coeff: 0.275, constant: 0)]
-            default:
-                return [Tier(maxKm: 3000, coeff: 0.606, constant: 0),
-                        Tier(maxKm: 6000, coeff: 0.079, constant: 1583),
-                        Tier(maxKm: .max, coeff: 0.343, constant: 0)]
-            }
-        case .scooter:
-            return [Tier(maxKm: 3000, coeff: 0.315, constant: 0),
-                    Tier(maxKm: 6000, coeff: 0.079, constant: 711),
-                    Tier(maxKm: .max, coeff: 0.198, constant: 0)]
+    private static func tiers(for type: VehicleType, cv: Int, config: KmAllowanceConfig) -> [Tier] {
+        let selectedBand = band(for: type, cv: cv, config: config)
+        return selectedBand.tiers.map { t in
+            Tier(maxKm: t.maxKm ?? .max, coeff: t.coeff, constant: t.constant)
         }
     }
 
-    static func cvRange(for type: VehicleType) -> ClosedRange<Int> {
+    static func cvRange(for type: VehicleType, config: KmAllowanceConfig) -> ClosedRange<Int> {
+        let bands = vehicleConfig(for: type, config: config).bands
+        let minCV = bands.map { $0.minCV }.min() ?? 1
+        let maxCV = bands.map { $0.maxCV }.max() ?? 1
+        return minCV...maxCV
+    }
+
+    static func cvLabel(for type: VehicleType, cv: Int, config: KmAllowanceConfig) -> String {
+        band(for: type, cv: cv, config: config).label
+    }
+
+    private static func vehicleConfig(for type: VehicleType, config: KmAllowanceConfig) -> KmVehicleConfig {
         switch type {
-        case .car: 3...7
-        case .moto: 1...6
-        case .scooter: 1...1
+        case .car: return config.car
+        case .moto: return config.moto
+        case .scooter: return config.scooter
         }
     }
 
-    static func cvLabel(for type: VehicleType, cv: Int) -> String {
-        switch type {
-        case .car:
-            if cv <= 3 { return "3 CV et moins" }
-            if cv >= 7 { return "7 CV et plus" }
-            return "\(cv) CV"
-        case .moto:
-            if cv <= 2 { return "1 ou 2 CV" }
-            if cv <= 5 { return "3 à 5 CV" }
-            return "Plus de 5 CV"
-        case .scooter:
-            return "—"
+    private static func band(for type: VehicleType, cv: Int, config: KmAllowanceConfig) -> KmBandConfig {
+        let bands = vehicleConfig(for: type, config: config).bands
+        if let match = bands.first(where: { cv >= $0.minCV && cv <= $0.maxCV }) {
+            return match
         }
+        return bands.first ?? KmAllowanceConfig.default.car.bands[0]
     }
 }
 
 struct KmCalculatorView: View {
+    let kmConfig: KmAllowanceConfig
     let onUse: (Double) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var vehicleType: VehicleType = .car
@@ -546,7 +505,7 @@ struct KmCalculatorView: View {
     @State private var kmText = ""
 
     private var km: Int { Int(kmText.replacingOccurrences(of: " ", with: "")) ?? 0 }
-    private var amount: Double { KmBareme.calculate(vehicleType: vehicleType, cv: cv, km: km) }
+    private var amount: Double { KmBareme.calculate(vehicleType: vehicleType, cv: cv, km: km, config: kmConfig) }
 
     var body: some View {
         NavigationStack {
@@ -558,11 +517,11 @@ struct KmCalculatorView: View {
                         }
                     }
                     if vehicleType != .scooter {
-                        Stepper(value: $cv, in: KmBareme.cvRange(for: vehicleType)) {
+                        Stepper(value: $cv, in: KmBareme.cvRange(for: vehicleType, config: kmConfig)) {
                             HStack {
                                 Text("Puissance fiscale")
                                 Spacer()
-                                Text(KmBareme.cvLabel(for: vehicleType, cv: cv))
+                                Text(KmBareme.cvLabel(for: vehicleType, cv: cv, config: kmConfig))
                                     .foregroundStyle(.secondary)
                             }
                         }
@@ -588,7 +547,7 @@ struct KmCalculatorView: View {
                                 .font(.title2.weight(.semibold))
                                 .foregroundStyle(.green)
                         }
-                        Label("\(KmBareme.label) Ce montant inclut : carburant, entretien, assurance, dépréciation.", systemImage: "info.circle")
+                        Label("\(KmBareme.label(config: kmConfig)) Ce montant inclut : carburant, entretien, assurance, dépréciation.", systemImage: "info.circle")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
 
@@ -604,7 +563,7 @@ struct KmCalculatorView: View {
                     }
                 }
             }
-            .navigationTitle("Frais kilométriques")
+            .navigationTitle("Frais km \(kmConfig.scaleYear)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -612,7 +571,7 @@ struct KmCalculatorView: View {
                 }
             }
             .onChange(of: vehicleType) { _, _ in
-                let range = KmBareme.cvRange(for: vehicleType)
+                let range = KmBareme.cvRange(for: vehicleType, config: kmConfig)
                 if cv < range.lowerBound { cv = range.lowerBound }
                 if cv > range.upperBound { cv = range.upperBound }
             }
@@ -676,6 +635,7 @@ struct ContentView: View {
     }
 
     private var config: TaxConfig { configLoader.config }
+    private var kmConfig: KmAllowanceConfig { config.kmAllowance ?? .default }
 
     private var frequentTemplates: [FrequentTaxTemplate] {
         [
@@ -851,7 +811,7 @@ struct ContentView: View {
                 }
             }
             .sheet(item: $showKmCalculator) { target in
-                KmCalculatorView { amount in
+                KmCalculatorView(kmConfig: kmConfig) { amount in
                     let text = String(Int(amount))
                     if target == .declarant2 {
                         fraisReelsText2 = text

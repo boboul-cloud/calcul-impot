@@ -39,5 +39,112 @@
       "rate": 0.66,
       "incomePercentCap": 0.20
     }
+  },
+  "kmAllowance": {
+    "scaleYear": 2026,
+    "revenueYear": 2025,
+    "source": "Arrete officiel (a verifier chaque annee)",
+    "car": {
+      "bands": [
+        {
+          "minCV": 1,
+          "maxCV": 3,
+          "label": "3 CV et moins",
+          "tiers": [
+            { "maxKm": 5000, "coeff": 0.529, "constant": 0 },
+            { "maxKm": 20000, "coeff": 0.316, "constant": 1065 },
+            { "maxKm": null, "coeff": 0.370, "constant": 0 }
+          ]
+        },
+        {
+          "minCV": 4,
+          "maxCV": 4,
+          "label": "4 CV",
+          "tiers": [
+            { "maxKm": 5000, "coeff": 0.606, "constant": 0 },
+            { "maxKm": 20000, "coeff": 0.340, "constant": 1330 },
+            { "maxKm": null, "coeff": 0.407, "constant": 0 }
+          ]
+        },
+        {
+          "minCV": 5,
+          "maxCV": 5,
+          "label": "5 CV",
+          "tiers": [
+            { "maxKm": 5000, "coeff": 0.636, "constant": 0 },
+            { "maxKm": 20000, "coeff": 0.357, "constant": 1395 },
+            { "maxKm": null, "coeff": 0.427, "constant": 0 }
+          ]
+        },
+        {
+          "minCV": 6,
+          "maxCV": 6,
+          "label": "6 CV",
+          "tiers": [
+            { "maxKm": 5000, "coeff": 0.665, "constant": 0 },
+            { "maxKm": 20000, "coeff": 0.374, "constant": 1457 },
+            { "maxKm": null, "coeff": 0.447, "constant": 0 }
+          ]
+        },
+        {
+          "minCV": 7,
+          "maxCV": 12,
+          "label": "7 CV et plus",
+          "tiers": [
+            { "maxKm": 5000, "coeff": 0.697, "constant": 0 },
+            { "maxKm": 20000, "coeff": 0.394, "constant": 1515 },
+            { "maxKm": null, "coeff": 0.470, "constant": 0 }
+          ]
+        }
+      ]
+    },
+    "moto": {
+      "bands": [
+        {
+          "minCV": 1,
+          "maxCV": 2,
+          "label": "1 ou 2 CV",
+          "tiers": [
+            { "maxKm": 3000, "coeff": 0.395, "constant": 0 },
+            { "maxKm": 6000, "coeff": 0.099, "constant": 891 },
+            { "maxKm": null, "coeff": 0.248, "constant": 0 }
+          ]
+        },
+        {
+          "minCV": 3,
+          "maxCV": 5,
+          "label": "3 a 5 CV",
+          "tiers": [
+            { "maxKm": 3000, "coeff": 0.468, "constant": 0 },
+            { "maxKm": 6000, "coeff": 0.082, "constant": 1158 },
+            { "maxKm": null, "coeff": 0.275, "constant": 0 }
+          ]
+        },
+        {
+          "minCV": 6,
+          "maxCV": 12,
+          "label": "Plus de 5 CV",
+          "tiers": [
+            { "maxKm": 3000, "coeff": 0.606, "constant": 0 },
+            { "maxKm": 6000, "coeff": 0.079, "constant": 1583 },
+            { "maxKm": null, "coeff": 0.343, "constant": 0 }
+          ]
+        }
+      ]
+    },
+    "scooter": {
+      "bands": [
+        {
+          "minCV": 1,
+          "maxCV": 1,
+          "label": "-",
+          "tiers": [
+            { "maxKm": 3000, "coeff": 0.315, "constant": 0 },
+            { "maxKm": 6000, "coeff": 0.079, "constant": 711 },
+            { "maxKm": null, "coeff": 0.198, "constant": 0 }
+          ]
+        }
+      ]
+    }
   }
 }

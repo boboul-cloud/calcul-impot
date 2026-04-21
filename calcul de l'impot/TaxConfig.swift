@@ -52,6 +52,89 @@ struct CreditsConfig: Codable, Equatable {
     let donsAutres: DonsAutresConfig
 }
 
+struct KmTierConfig: Codable, Equatable {
+    let maxKm: Int? // nil = infinity (last tier)
+    let coeff: Double
+    let constant: Double
+}
+
+struct KmBandConfig: Codable, Equatable {
+    let minCV: Int
+    let maxCV: Int
+    let label: String
+    let tiers: [KmTierConfig]
+}
+
+struct KmVehicleConfig: Codable, Equatable {
+    let bands: [KmBandConfig]
+}
+
+struct KmAllowanceConfig: Codable, Equatable {
+    let scaleYear: Int
+    let revenueYear: Int
+    let source: String
+    let car: KmVehicleConfig
+    let moto: KmVehicleConfig
+    let scooter: KmVehicleConfig
+
+    static let `default` = KmAllowanceConfig(
+        scaleYear: 2026,
+        revenueYear: 2025,
+        source: "Arrêté officiel (à vérifier chaque année)",
+        car: .init(bands: [
+            .init(minCV: 1, maxCV: 3, label: "3 CV et moins", tiers: [
+                .init(maxKm: 5_000, coeff: 0.529, constant: 0),
+                .init(maxKm: 20_000, coeff: 0.316, constant: 1_065),
+                .init(maxKm: nil, coeff: 0.370, constant: 0)
+            ]),
+            .init(minCV: 4, maxCV: 4, label: "4 CV", tiers: [
+                .init(maxKm: 5_000, coeff: 0.606, constant: 0),
+                .init(maxKm: 20_000, coeff: 0.340, constant: 1_330),
+                .init(maxKm: nil, coeff: 0.407, constant: 0)
+            ]),
+            .init(minCV: 5, maxCV: 5, label: "5 CV", tiers: [
+                .init(maxKm: 5_000, coeff: 0.636, constant: 0),
+                .init(maxKm: 20_000, coeff: 0.357, constant: 1_395),
+                .init(maxKm: nil, coeff: 0.427, constant: 0)
+            ]),
+            .init(minCV: 6, maxCV: 6, label: "6 CV", tiers: [
+                .init(maxKm: 5_000, coeff: 0.665, constant: 0),
+                .init(maxKm: 20_000, coeff: 0.374, constant: 1_457),
+                .init(maxKm: nil, coeff: 0.447, constant: 0)
+            ]),
+            .init(minCV: 7, maxCV: 12, label: "7 CV et plus", tiers: [
+                .init(maxKm: 5_000, coeff: 0.697, constant: 0),
+                .init(maxKm: 20_000, coeff: 0.394, constant: 1_515),
+                .init(maxKm: nil, coeff: 0.470, constant: 0)
+            ])
+        ]),
+        moto: .init(bands: [
+            .init(minCV: 1, maxCV: 2, label: "1 ou 2 CV", tiers: [
+                .init(maxKm: 3_000, coeff: 0.395, constant: 0),
+                .init(maxKm: 6_000, coeff: 0.099, constant: 891),
+                .init(maxKm: nil, coeff: 0.248, constant: 0)
+            ]),
+            .init(minCV: 3, maxCV: 5, label: "3 a 5 CV", tiers: [
+                .init(maxKm: 3_000, coeff: 0.468, constant: 0),
+                .init(maxKm: 6_000, coeff: 0.082, constant: 1_158),
+                .init(maxKm: nil, coeff: 0.275, constant: 0)
+            ]),
+            .init(minCV: 6, maxCV: 12, label: "Plus de 5 CV", tiers: [
+                .init(maxKm: 3_000, coeff: 0.606, constant: 0),
+                .init(maxKm: 6_000, coeff: 0.079, constant: 1_583),
+                .init(maxKm: nil, coeff: 0.343, constant: 0)
+            ])
+        ]),
+        scooter: .init(bands: [
+            .init(minCV: 1, maxCV: 1, label: "-", tiers: [
+                .init(maxKm: 3_000, coeff: 0.315, constant: 0),
+                .init(maxKm: 6_000, coeff: 0.079, constant: 711),
+                .init(maxKm: nil, coeff: 0.198, constant: 0)
+            ])
+        ])
+    )
+}
+
 struct TaxConfig: Codable, Equatable {
     let year: Int
     let revenueYear: Int
@@ -63,6 +146,7 @@ struct TaxConfig: Codable, Equatable {
     let decote: DecoteConfig
     let deduction: DeductionConfig
     let credits: CreditsConfig
+    let kmAllowance: KmAllowanceConfig?
 
     static let `default` = TaxConfig(
         year: 2026,
@@ -90,7 +174,8 @@ struct TaxConfig: Codable, Equatable {
             emploiDomicile: .init(rate: 0.50, baseCap: 12_000, perChildBonus: 1_500, maxCap: 15_000),
             donsAide: .init(rate: 0.75, cap: 1_000),
             donsAutres: .init(rate: 0.66, incomePercentCap: 0.20)
-        )
+        ),
+        kmAllowance: .default
     )
 }
 
