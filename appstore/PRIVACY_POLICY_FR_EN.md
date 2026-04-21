@@ -6,8 +6,8 @@ Derniere mise a jour: 21 avril 2026
 
 ### 1. Responsable
 Application: Calcul de l'impot
-Editeur: [A_COMPLETER]
-Contact: [A_COMPLETER]
+Editeur: Robert Oulhen
+Contact: bob.oulhen@gmail.com
 
 ### 2. Donnees traitees
 L'application fonctionne principalement en local sur l'appareil.
@@ -40,7 +40,7 @@ Vous pouvez:
 - retirer votre cle API OpenAI dans l'app
 - ne pas utiliser les fonctions IA
 
-Pour toute question: [A_COMPLETER]
+Pour toute question: bob.oulhen@gmail.com
 
 ### 7. Securite
 Nous appliquons des mesures raisonnables pour limiter l'acces non autorise aux donnees locales. Aucune methode de securite n'est infaillible.
@@ -52,8 +52,8 @@ Cette politique peut etre mise a jour. La date de mise a jour sera modifiee en c
 
 ### 1. Data Controller
 App: Calcul de l'impot
-Publisher: [A_COMPLETER]
-Contact: [A_COMPLETER]
+Publisher: Robert Oulhen
+Contact: bob.oulhen@gmail.com
 
 ### 2. Data Processed
 The app primarily runs locally on the device.
@@ -86,7 +86,7 @@ You can:
 - remove your OpenAI API key in the app
 - avoid using AI features
 
-For questions: [A_COMPLETER]
+For questions: bob.oulhen@gmail.com
 
 ### 7. Security
 Reasonable safeguards are used to protect local data. No security method is perfect.

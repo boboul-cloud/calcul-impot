@@ -17,8 +17,8 @@ Ce dossier contient les documents prêts à copier/coller pour la mise en ligne 
 5. Faire un upload TestFlight puis soumettre la version.
 
 ## Champs à personnaliser
-- [A_COMPLETER] Nom développeur / société
-- [A_COMPLETER] Email de contact privacy
-- [A_COMPLETER] URL de support
-- [A_COMPLETER] URL marketing (optionnel)
-- [A_COMPLETER] URL finale de privacy policy
+- Développeur / éditeur : Robert Oulhen
+- Email de contact privacy : bob.oulhen@gmail.com
+- URL de support : https://github.com/boboul-cloud/calcul-impot/issues
+- URL marketing : https://boboul-cloud.github.io/calcul-impot/
+- URL finale de privacy policy : https://boboul-cloud.github.io/calcul-impot/privacy-policy.html

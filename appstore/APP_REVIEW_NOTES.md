@@ -27,6 +27,6 @@
 - Elle ne remplace pas une declaration fiscale officielle ni un conseil professionnel.
 
 ## Contact review
-- Nom : [A_COMPLETER]
-- Email : [A_COMPLETER]
-- Telephone : [A_COMPLETER]
+- Nom : Robert Oulhen
+- Email : bob.oulhen@gmail.com
+- Telephone : 0668707219
