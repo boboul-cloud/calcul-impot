@@ -172,6 +172,15 @@ enum AITaxFormAssistant {
         - Propose entre 1 et 5 entrées maximum.
         - Si la demande est vague, propose les plus probables et indique une prudence dans message.
         - N'invente pas de montants.
+                - Classe OBLIGATOIREMENT chaque entrée dans la bonne catégorie:
+                    * taxable_income = revenus imposables (salaires complémentaires, revenus fonciers, BIC/BNC, plus-values imposables...)
+                    * deductible_charge = charges qui diminuent le revenu imposable (pension versée, déficit foncier, charges déductibles...)
+                    * tax_credit = avantages fiscaux (crédits/réductions d'impôt: dons, garde d'enfants, emploi à domicile...)
+                    * withholding_paid = montants déjà payés (prélèvement à la source, acomptes, retenues)
+                - Si une case 7xx est citée, privilégie tax_credit.
+                - Si une case 6xx est citée, privilégie deductible_charge.
+                - Si une case 1xx à 5xx est citée, privilégie taxable_income.
+                - Si une case 8xx est citée, privilégie withholding_paid.
 
         Demande utilisateur:
         \(query)
@@ -582,6 +591,7 @@ struct KmCalculatorView: View {
 // MARK: - View
 
 struct ContentView: View {
+    @Environment(\.colorScheme) private var colorScheme
     @State private var configLoader = TaxConfigLoader()
     @State private var incomeText1 = ""
     @State private var incomeText2 = ""
@@ -620,6 +630,8 @@ struct ContentView: View {
     @State private var chatIsLoading = false
     @State private var pdfPreviewItem: TaxPDFPreviewItem?
     @State private var a4OptimizedPrint = false
+    @State private var selectedPage: AppPage = .overview
+    @State private var showPrivacyPolicySheet = false
 
     struct BracketDetailData: Identifiable {
         let id = UUID()
@@ -632,6 +644,60 @@ struct ContentView: View {
     enum KmTarget: Identifiable {
         case declarant1, declarant2
         var id: Int { self == .declarant1 ? 1 : 2 }
+    }
+
+    enum AppPage: String, CaseIterable, Identifiable {
+        case overview
+        case incomes
+        case credits
+        case assistant
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .overview: return "Accueil"
+            case .incomes: return "Revenus"
+            case .credits: return "Déductions & avantages"
+            case .assistant: return "Assistant"
+            }
+        }
+
+        var icon: String {
+            switch self {
+            case .overview: return "house.fill"
+            case .incomes: return "text.document.fill"
+            case .credits: return "giftcard.fill"
+            case .assistant: return "message.fill"
+            }
+        }
+
+        var tint: Color {
+            switch self {
+            case .overview: return .blue
+            case .incomes: return .teal
+            case .credits: return .orange
+            case .assistant: return .indigo
+            }
+        }
+
+        var subtitle: String {
+            switch self {
+            case .overview: return "Synthèse et résultat"
+            case .incomes: return "Saisie revenus et situation"
+            case .credits: return "Déductions, crédits et prélèvements"
+            case .assistant: return "Guidage fiscal assisté"
+            }
+        }
+    }
+
+    struct PressableScaleButtonStyle: ButtonStyle {
+        func makeBody(configuration: Configuration) -> some View {
+            configuration.label
+                .scaleEffect(configuration.isPressed ? 0.97 : 1.0)
+                .opacity(configuration.isPressed ? 0.9 : 1.0)
+                .animation(.spring(response: 0.22, dampingFraction: 0.72), value: configuration.isPressed)
+        }
     }
 
     private var config: TaxConfig { configLoader.config }
@@ -727,20 +793,18 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: 20) {
-                    configCard
-                    scanCard
-                    inputCard
-                    creditsCard
-                    taxAssistantCard
-                    additionalEntriesCard
-                    calculateButton
-                    if let result { resultCards(result) }
+            ZStack {
+                atmosphericBackground
+
+                VStack(spacing: 14) {
+                    pagePicker
+                        .padding(.horizontal)
+                        .padding(.top, 6)
+
+                    currentPageView
+                        .animation(.spring(response: 0.35, dampingFraction: 0.86), value: selectedPage)
                 }
-                .padding()
             }
-            .background(Color(.systemGroupedBackground))
             .navigationTitle("Impôt \(config.year)")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
@@ -853,6 +917,9 @@ struct ContentView: View {
             .sheet(item: $pdfPreviewItem) { item in
                 TaxPDFPreviewSheet(pdfURL: item.url, pdfData: item.data, isA4Optimized: item.isA4Optimized)
             }
+            .sheet(isPresented: $showPrivacyPolicySheet) {
+                PrivacyPolicySheet()
+            }
             .overlay {
                 if scanProcessing {
                     Color.black.opacity(0.4)
@@ -873,6 +940,252 @@ struct ContentView: View {
                 }
             }
         }
+    }
+
+    private var atmosphericBackground: some View {
+        ZStack {
+            LinearGradient(
+                colors: colorScheme == .dark
+                ? [
+                    Color(red: 0.08, green: 0.10, blue: 0.14),
+                    Color(red: 0.07, green: 0.13, blue: 0.12),
+                    Color(red: 0.13, green: 0.10, blue: 0.08)
+                ]
+                : [
+                    Color(red: 0.96, green: 0.98, blue: 1.0),
+                    Color(red: 0.92, green: 0.97, blue: 0.96),
+                    Color(red: 0.99, green: 0.95, blue: 0.90)
+                ],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+
+            Circle()
+                .fill(Color.teal.opacity(0.16))
+                .frame(width: 260, height: 260)
+                .blur(radius: 14)
+                .offset(x: -120, y: -280)
+
+            Circle()
+                .fill(Color.orange.opacity(0.14))
+                .frame(width: 240, height: 240)
+                .blur(radius: 16)
+                .offset(x: 130, y: -200)
+        }
+    }
+
+    private var pagePicker: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 10) {
+                ForEach(AppPage.allCases) { page in
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.82)) {
+                            selectedPage = page
+                        }
+                    } label: {
+                        Label(page.title, systemImage: page.icon)
+                            .font(.subheadline.weight(.semibold))
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 10)
+                            .background(
+                                selectedPage == page
+                                ? page.tint
+                                : Color(.secondarySystemBackground)
+                            )
+                            .foregroundStyle(selectedPage == page ? Color.white : Color.primary)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(PressableScaleButtonStyle())
+                }
+            }
+            .padding(6)
+            .background(.ultraThinMaterial, in: Capsule())
+        }
+    }
+
+    private func pageIntroCard(_ page: AppPage) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: page.icon)
+                .font(.title3.weight(.bold))
+                .foregroundStyle(.white)
+                .frame(width: 40, height: 40)
+                .background(page.tint, in: RoundedRectangle(cornerRadius: 10))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(page.title)
+                    .font(.headline)
+                Text(page.subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding()
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(page.tint.opacity(0.25), lineWidth: 1)
+        )
+    }
+
+    private func stagedCard<Content: View>(_ index: Int, on page: AppPage, @ViewBuilder content: () -> Content) -> some View {
+        let isActive = selectedPage == page
+        return content()
+            .opacity(isActive ? 1 : 0.65)
+            .offset(y: isActive ? 0 : 14)
+            .scaleEffect(isActive ? 1 : 0.985)
+            .animation(
+                .spring(response: 0.45, dampingFraction: 0.86)
+                    .delay(Double(index) * 0.05),
+                value: selectedPage
+            )
+    }
+
+    private func pageContainer<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                content()
+            }
+            .padding(.horizontal)
+            .padding(.bottom, 18)
+        }
+        .scrollIndicators(.hidden)
+    }
+
+    private var overviewPage: some View {
+        pageContainer {
+            stagedCard(0, on: .overview) { pageIntroCard(.overview) }
+            stagedCard(1, on: .overview) { overviewHeroCard }
+            stagedCard(2, on: .overview) { configCard }
+            stagedCard(3, on: .overview) { calculateButton }
+            if let result {
+                stagedCard(4, on: .overview) { resultCards(result) }
+            }
+        }
+    }
+
+    private var incomesPage: some View {
+        pageContainer {
+            stagedCard(0, on: .incomes) { pageIntroCard(.incomes) }
+            stagedCard(1, on: .incomes) { scanCard }
+            stagedCard(2, on: .incomes) { inputCard }
+            stagedCard(3, on: .incomes) {
+                additionalEntriesCard(
+                    title: "Entrées revenus",
+                    kinds: [.taxableIncome],
+                    emptyMessage: "Aucun revenu supplémentaire ajouté."
+                )
+            }
+            stagedCard(4, on: .incomes) { calculateButton }
+        }
+    }
+
+    private var creditsPage: some View {
+        pageContainer {
+            stagedCard(0, on: .credits) { pageIntroCard(.credits) }
+            stagedCard(1, on: .credits) { creditsCard }
+            stagedCard(2, on: .credits) {
+                additionalEntriesCard(
+                    title: "Entrées avantages / prélèvements",
+                    kinds: [.deductibleCharge, .taxCredit, .withholdingPaid],
+                    emptyMessage: "Aucun avantage ou prélèvement ajouté."
+                )
+            }
+            stagedCard(3, on: .credits) { calculateButton }
+        }
+    }
+
+    private var assistantPage: some View {
+        pageContainer {
+            stagedCard(0, on: .assistant) { pageIntroCard(.assistant) }
+            stagedCard(1, on: .assistant) { taxAssistantCard }
+            stagedCard(2, on: .assistant) { privacyAndLegalCard }
+            if result == nil {
+                stagedCard(3, on: .assistant) { assistantHintCard }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var currentPageView: some View {
+        switch selectedPage {
+        case .overview:
+            overviewPage
+                .transition(.asymmetric(insertion: .move(edge: .leading).combined(with: .opacity), removal: .opacity))
+        case .incomes:
+            incomesPage
+                .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
+        case .credits:
+            creditsPage
+                .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
+        case .assistant:
+            assistantPage
+                .transition(.asymmetric(insertion: .move(edge: .trailing).combined(with: .opacity), removal: .opacity))
+        }
+    }
+
+    private var overviewHeroCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Vue d'ensemble")
+                        .font(.headline)
+                    Text("Parcours guidé en 4 pages")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "sparkles")
+                    .font(.title2.weight(.bold))
+                    .foregroundStyle(.blue)
+            }
+
+            HStack(spacing: 10) {
+                heroMetric(title: "Revenu retenu", value: TaxEngine.cur(adjustedIncome))
+                heroMetric(title: "Enfants", value: "\(children)")
+                heroMetric(title: "Statut", value: situation == .couple ? "Couple" : "Solo")
+            }
+        }
+        .padding()
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 18))
+        .overlay(
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(Color.white.opacity(0.6), lineWidth: 1)
+        )
+    }
+
+    private func heroMetric(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.callout.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(Color(.secondarySystemBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var assistantHintCard: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "lightbulb.max.fill")
+                .foregroundStyle(.orange)
+            Text("Ajoutez votre clé API puis décrivez votre situation fiscale pour obtenir des propositions de cases à remplir.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+        }
+        .padding()
+        .background(.background)
+        .clipShape(RoundedRectangle(cornerRadius: 14))
+        .shadow(color: .black.opacity(0.04), radius: 6, y: 3)
     }
 
     // MARK: - Scan Processing
@@ -1035,6 +1348,7 @@ struct ContentView: View {
                 } label: {
                     scanOptionLabel("Caméra", icon: "camera.fill")
                 }
+                .buttonStyle(PressableScaleButtonStyle())
 
                 PhotosPicker(selection: $selectedPhoto, matching: .images) {
                     scanOptionLabel("Photo", icon: "photo.on.rectangle")
@@ -1045,27 +1359,7 @@ struct ContentView: View {
                 } label: {
                     scanOptionLabel("PDF", icon: "doc.fill")
                 }
-            }
-
-            // OpenAI API key for AI-powered parsing
-            VStack(spacing: 4) {
-                HStack(spacing: 6) {
-                    Image(systemName: openAIKey.isEmpty ? "brain" : "brain.fill")
-                        .foregroundStyle(openAIKey.isEmpty ? Color.secondary : Color.green)
-                    Text(openAIKey.isEmpty ? "Analyse IA désactivée" : "Analyse IA active")
-                        .font(.caption)
-                        .foregroundStyle(openAIKey.isEmpty ? Color.secondary : Color.green)
-                    Spacer()
-                }
-                SecureField("Clé API OpenAI", text: $openAIKey)
-                    .textContentType(.password)
-                    .font(.caption)
-                    .padding(8)
-                    .background(Color(.systemGray6))
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .onChange(of: openAIKey) { _, newValue in
-                        AITaxParser.apiKey = newValue
-                    }
+                .buttonStyle(PressableScaleButtonStyle())
             }
         }
         .padding()
@@ -1104,6 +1398,11 @@ struct ContentView: View {
                         Text("Dernière synchro : \(date.formatted(.dateTime.day().month().year().hour().minute()))")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
+                        if let source = configLoader.remoteSourceLabel {
+                            Text("Source : \(source)")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
                     } else {
                         Text("Barème par défaut (intégré)")
                             .font(.caption2)
@@ -1158,6 +1457,7 @@ struct ContentView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 10))
             }
             .disabled(configLoader.isLoading)
+            .buttonStyle(PressableScaleButtonStyle())
 
             Toggle(isOn: $a4OptimizedPrint) {
                 VStack(alignment: .leading, spacing: 2) {
@@ -1174,19 +1474,6 @@ struct ContentView: View {
                 HStack {
                     Image(systemName: "safari")
                     Text("Voir le barème officiel")
-                        .fontWeight(.medium)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 10)
-                .background(Color(.systemGray5))
-                .foregroundStyle(.blue)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-            }
-
-            Link(destination: URL(string: "https://boboul-cloud.github.io/tax-config/")!) {
-                HStack {
-                    Image(systemName: "pencil.circle")
-                    Text("Modifier le barème en ligne")
                         .fontWeight(.medium)
                 }
                 .frame(maxWidth: .infinity)
@@ -1450,6 +1737,7 @@ struct ContentView: View {
                     averageRate: finalAverageRate,
                     brackets: baseResult.brackets
                 )
+                selectedPage = .overview
             }
         } label: {
             HStack {
@@ -1465,6 +1753,7 @@ struct ContentView: View {
             .foregroundStyle(.white)
             .clipShape(RoundedRectangle(cornerRadius: 14))
         }
+        .buttonStyle(PressableScaleButtonStyle())
     }
 
     // MARK: - Result Cards
@@ -1667,6 +1956,57 @@ struct ContentView: View {
         }
     }
 
+    private var privacyAndLegalCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label("Confidentialité & mentions", systemImage: "lock.shield")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+
+            Text("Retrouvez ici les informations de confidentialité et les limites d'usage de l'application.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Label("Calcul local par défaut sur votre appareil", systemImage: "iphone")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Label("Fonctions IA optionnelles avec votre clé API", systemImage: "brain.head.profile")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                Label("Simulation informative, non contractuelle", systemImage: "doc.text.magnifyingglass")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+
+            HStack(spacing: 12) {
+                Link(destination: URL(string: "https://boboul-cloud.github.io/calcul-de-l-impot/")!) {
+                    Label("Page web", systemImage: "globe")
+                        .font(.caption.weight(.semibold))
+                }
+
+                Link(destination: URL(string: "https://boboul-cloud.github.io/calcul-de-l-impot/privacy-policy.html")!) {
+                    Label("Politique en ligne", systemImage: "safari")
+                        .font(.caption.weight(.semibold))
+                }
+            }
+
+            Button {
+                showPrivacyPolicySheet = true
+            } label: {
+                Label("Voir la politique complète", systemImage: "chevron.right.circle.fill")
+                    .font(.subheadline.weight(.semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.blue)
+        }
+        .padding()
+        .background(.background)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.06), radius: 8, y: 4)
+    }
+
     // MARK: - Declarant Section
 
     private var taxAssistantCard: some View {
@@ -1678,6 +2018,58 @@ struct ContentView: View {
             Text("Décrivez votre situation pour proposer automatiquement des cases à remplir.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Image(systemName: openAIKey.isEmpty ? "brain" : "brain.fill")
+                        .foregroundStyle(openAIKey.isEmpty ? Color.secondary : Color.green)
+                    Text(openAIKey.isEmpty ? "Analyse IA désactivée" : "Analyse IA activée")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                }
+
+                SecureField("Clé API OpenAI", text: $openAIKey)
+                    .textContentType(.password)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled(true)
+                    .font(.callout.monospaced())
+                    .padding(10)
+                    .background(Color(.systemGray6))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .onChange(of: openAIKey) { _, newValue in
+                        AITaxParser.apiKey = newValue
+                    }
+
+                HStack(spacing: 12) {
+                    Link(destination: URL(string: "https://platform.openai.com/api-keys")!) {
+                        Label("Créer une clé API", systemImage: "link")
+                            .font(.caption.weight(.semibold))
+                    }
+
+                    Link(destination: URL(string: "https://platform.openai.com/docs/quickstart")!) {
+                        Label("Site OpenAI", systemImage: "safari")
+                            .font(.caption.weight(.semibold))
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Mode d'emploi")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text("1. Ouvrez \"Créer une clé API\" et générez une clé sur OpenAI.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text("2. Collez la clé ci-dessus (elle reste locale sur votre iPhone).")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Text("3. Décrivez votre situation dans le chat pour obtenir des cases à ajouter.")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(10)
+            .background(Color(.systemGray6).opacity(0.7))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
@@ -1712,24 +2104,34 @@ struct ContentView: View {
         .shadow(color: .black.opacity(0.06), radius: 8, y: 4)
     }
 
-    private var additionalEntriesCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
+    private func additionalEntriesCard(title: String, kinds: [AdditionalEntryKind], emptyMessage: String) -> some View {
+        let filteredTemplates = frequentTemplates.filter { kinds.contains($0.kind) }
+        let hasEntries = additionalEntries.contains { kinds.contains($0.kind) }
+
+        return VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Label("Autres entrées fiscales", systemImage: "square.and.pencil")
+                Label(title, systemImage: "square.and.pencil")
                     .font(.headline)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button {
-                    additionalEntries.append(.init(title: "Nouvelle entrée", suggestedBox: "", kind: .deductibleCharge))
+                Menu {
+                    ForEach(AdditionalEntryKind.allCases.filter { kinds.contains($0) }) { kind in
+                        Button {
+                            addAdditionalEntry(of: kind)
+                        } label: {
+                            Label(kind.rawValue, systemImage: kind.icon)
+                        }
+                    }
                 } label: {
-                    Label("Ajouter", systemImage: "plus")
+                    Label("Ajouter", systemImage: "plus.circle.fill")
                         .font(.caption.weight(.semibold))
                 }
+                .buttonStyle(PressableScaleButtonStyle())
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
-                    ForEach(frequentTemplates) { template in
+                    ForEach(filteredTemplates) { template in
                         Button {
                             addTemplateEntry(template)
                         } label: {
@@ -1751,52 +2153,22 @@ struct ContentView: View {
                 }
             }
 
-            if additionalEntries.isEmpty {
-                Text("Aucune entrée ajoutée. Utilisez l'assistant IA ci-dessus, ou ajoutez manuellement.")
+            if !hasEntries {
+                Text(emptyMessage + " Utilisez l'assistant IA ou le bouton Ajouter.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {
-                ForEach($additionalEntries) { $entry in
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            TextField("Libellé (ex: pension alimentaire)", text: $entry.title)
-                                .textFieldStyle(.roundedBorder)
-                            Button(role: .destructive) {
-                                removeAdditionalEntry(entry.id)
-                            } label: {
-                                Image(systemName: "trash")
-                            }
-                        }
-
-                        HStack {
-                            Picker("Type", selection: $entry.kind) {
-                                ForEach(AdditionalEntryKind.allCases) { kind in
-                                    Label(kind.rawValue, systemImage: kind.icon).tag(kind)
-                                }
-                            }
-                            .pickerStyle(.menu)
-
-                            TextField("Case (ex: 6GU)", text: $entry.suggestedBox)
-                                .textFieldStyle(.roundedBorder)
-                        }
-
-                        HStack {
-                            TextField("Montant", text: $entry.amountText)
-                                .keyboardType(.decimalPad)
-                                .textFieldStyle(.roundedBorder)
-                            Text("€")
-                                .foregroundStyle(.secondary)
-                        }
-
-                        if !entry.note.isEmpty {
-                            Label(entry.note, systemImage: "info.circle")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(10)
-                    .background(Color(.systemGray6))
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                if kinds.contains(.taxableIncome) {
+                    additionalEntriesSection(title: "Revenus supplémentaires", kind: .taxableIncome)
+                }
+                if kinds.contains(.deductibleCharge) {
+                    additionalEntriesSection(title: "Charges déductibles", kind: .deductibleCharge)
+                }
+                if kinds.contains(.taxCredit) {
+                    additionalEntriesSection(title: "Crédits / réductions", kind: .taxCredit)
+                }
+                if kinds.contains(.withholdingPaid) {
+                    additionalEntriesSection(title: "Prélèvements déjà payés", kind: .withholdingPaid)
                 }
             }
         }
@@ -1804,6 +2176,59 @@ struct ContentView: View {
         .background(.background)
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .shadow(color: .black.opacity(0.06), radius: 8, y: 4)
+    }
+
+    @ViewBuilder
+    private func additionalEntriesSection(title: String, kind: AdditionalEntryKind) -> some View {
+        let entries = $additionalEntries.filter { $0.wrappedValue.kind == kind }
+        if !entries.isEmpty {
+            VStack(alignment: .leading, spacing: 8) {
+                Label(title, systemImage: kind.icon)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(kind.tint)
+
+                ForEach(entries) { entry in
+                    additionalEntryEditor(entry)
+                }
+            }
+            .padding(10)
+            .background(kind.tint.opacity(0.08))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+    }
+
+    private func additionalEntryEditor(_ entry: Binding<AdditionalTaxEntry>) -> some View {
+        let value = entry.wrappedValue
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                TextField("Libellé (ex: pension alimentaire)", text: entry.title)
+                    .textFieldStyle(.roundedBorder)
+                Button(role: .destructive) {
+                    removeAdditionalEntry(value.id)
+                } label: {
+                    Image(systemName: "trash")
+                }
+            }
+
+            HStack {
+                TextField("Case (ex: 6GU)", text: entry.suggestedBox)
+                    .textFieldStyle(.roundedBorder)
+                TextField("Montant", text: entry.amountText)
+                    .keyboardType(.decimalPad)
+                    .textFieldStyle(.roundedBorder)
+                Text("€")
+                    .foregroundStyle(.secondary)
+            }
+
+            if !value.note.isEmpty {
+                Label(value.note, systemImage: "info.circle")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(10)
+        .background(Color(.systemGray6))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
 
     private func sendTaxChatPrompt() {
@@ -1829,15 +2254,100 @@ struct ContentView: View {
 
     private func mergeAdditionalEntries(_ entries: [AdditionalTaxEntry]) {
         for entry in entries {
+            let normalized = normalizeAIEntryKind(entry)
             let exists = additionalEntries.contains {
-                $0.kind == entry.kind
-                && $0.title.caseInsensitiveCompare(entry.title) == .orderedSame
-                && $0.suggestedBox.caseInsensitiveCompare(entry.suggestedBox) == .orderedSame
+                $0.kind == normalized.kind
+                && $0.title.caseInsensitiveCompare(normalized.title) == .orderedSame
+                && $0.suggestedBox.caseInsensitiveCompare(normalized.suggestedBox) == .orderedSame
             }
             if !exists {
-                additionalEntries.append(entry)
+                additionalEntries.append(normalized)
             }
         }
+    }
+
+    private func normalizeAIEntryKind(_ entry: AdditionalTaxEntry) -> AdditionalTaxEntry {
+        let inferred = inferEntryKind(title: entry.title, note: entry.note, suggestedBox: entry.suggestedBox, initialKind: entry.kind)
+        guard inferred != entry.kind else { return entry }
+
+        var adjusted = entry
+        adjusted.kind = inferred
+
+        if adjusted.note.isEmpty {
+            adjusted.note = "Catégorie ajustée automatiquement selon la case fiscale."
+        } else if !adjusted.note.lowercased().contains("catégorie ajustée") {
+            adjusted.note += " • Catégorie ajustée automatiquement selon la case fiscale."
+        }
+
+        return adjusted
+    }
+
+    private func inferEntryKind(title: String, note: String, suggestedBox: String, initialKind: AdditionalEntryKind) -> AdditionalEntryKind {
+        var scores: [AdditionalEntryKind: Int] = [
+            .taxableIncome: 0,
+            .deductibleCharge: 0,
+            .taxCredit: 0,
+            .withholdingPaid: 0
+        ]
+
+        scores[initialKind, default: 0] += 1
+
+        let normalizedBox = normalizeTaxBox(suggestedBox)
+        if let first = normalizedBox.first {
+            switch first {
+            case "1", "2", "3", "4", "5":
+                scores[.taxableIncome, default: 0] += 4
+            case "6":
+                scores[.deductibleCharge, default: 0] += 4
+            case "7":
+                scores[.taxCredit, default: 0] += 4
+            case "8":
+                scores[.withholdingPaid, default: 0] += 4
+            default:
+                break
+            }
+        }
+
+        let text = (title + " " + note + " " + normalizedBox).lowercased()
+
+        let incomeKeywords = ["revenu", "foncier", "loyer", "bénéfice", "benefice", "bic", "bnc", "plus-value", "salaire", "pension reçue", "pension recue"]
+        let chargeKeywords = ["charge", "déduct", "deduct", "pension versée", "pension versee", "travaux", "déficit", "deficit", "cotisation", "épargne retraite", "epargne retraite"]
+        let creditKeywords = ["crédit", "credit", "réduction", "reduction", "don", "garde", "domicile", "service à la personne", "service a la personne"]
+        let withholdingKeywords = ["prélèvement", "prelevement", "acompte", "retenue", "déjà payé", "deja paye", "source"]
+
+        if incomeKeywords.contains(where: { text.contains($0) }) {
+            scores[.taxableIncome, default: 0] += 2
+        }
+        if chargeKeywords.contains(where: { text.contains($0) }) {
+            scores[.deductibleCharge, default: 0] += 2
+        }
+        if creditKeywords.contains(where: { text.contains($0) }) {
+            scores[.taxCredit, default: 0] += 2
+        }
+        if withholdingKeywords.contains(where: { text.contains($0) }) {
+            scores[.withholdingPaid, default: 0] += 2
+        }
+
+        let sorted = scores.sorted { lhs, rhs in
+            if lhs.value == rhs.value {
+                return lhs.key.rawValue < rhs.key.rawValue
+            }
+            return lhs.value > rhs.value
+        }
+
+        guard let best = sorted.first else { return initialKind }
+        let topScore = best.value
+        let tieCount = sorted.filter { $0.value == topScore }.count
+
+        return tieCount > 1 ? initialKind : best.key
+    }
+
+    private func normalizeTaxBox(_ raw: String) -> String {
+        raw
+            .uppercased()
+            .replacingOccurrences(of: " ", with: "")
+            .replacingOccurrences(of: "-", with: "")
+            .replacingOccurrences(of: ".", with: "")
     }
 
     private func removeAdditionalEntry(_ id: UUID) {
@@ -1858,6 +2368,18 @@ struct ContentView: View {
                 kind: template.kind,
                 amountText: "",
                 note: template.note
+            )
+        )
+    }
+
+    private func addAdditionalEntry(of kind: AdditionalEntryKind) {
+        additionalEntries.append(
+            .init(
+                title: "Nouvelle entrée",
+                suggestedBox: "",
+                kind: kind,
+                amountText: "",
+                note: ""
             )
         )
     }
@@ -3225,6 +3747,120 @@ struct CreditHelpSheet: View {
             }
             .navigationTitle("Explication")
             .navigationBarTitleDisplayMode(.inline)
+        }
+    }
+}
+
+// MARK: - Privacy Policy Sheet
+
+struct PrivacyPolicySheet: View {
+    @Environment(\.dismiss) private var dismiss
+    private let promoURL = URL(string: "https://boboul-cloud.github.io/calcul-de-l-impot/")
+    private let privacyURL = URL(string: "https://boboul-cloud.github.io/calcul-de-l-impot/privacy-policy.html")
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Politique de confidentialité")
+                        .font(.title3.weight(.bold))
+
+                    Text("Dernière mise à jour : 21 avril 2026")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    HStack(spacing: 12) {
+                        if let promoURL {
+                            Link(destination: promoURL) {
+                                Label("Page web de l'app", systemImage: "globe")
+                                    .font(.caption.weight(.semibold))
+                            }
+                        }
+                        if let privacyURL {
+                            Link(destination: privacyURL) {
+                                Label("Politique en ligne", systemImage: "safari")
+                                    .font(.caption.weight(.semibold))
+                            }
+                        }
+                    }
+
+                    Group {
+                        policySection(
+                            title: "1. Données traitées",
+                            lines: [
+                                "L'app fonctionne principalement en local sur l'iPhone.",
+                                "Les données de simulation saisies restent sur l'appareil.",
+                                "Si l'IA est activée, du texte peut être transmis à OpenAI pour analyse."
+                            ]
+                        )
+
+                        policySection(
+                            title: "2. Finalité",
+                            lines: [
+                                "Réaliser une estimation de l'impôt.",
+                                "Aider à identifier des cases fiscales.",
+                                "Générer un PDF de synthèse sur demande."
+                            ]
+                        )
+
+                        policySection(
+                            title: "3. Clé API et IA",
+                            lines: [
+                                "La clé API OpenAI est stockée localement sur l'appareil.",
+                                "L'IA est optionnelle : l'app reste utilisable sans clé.",
+                                "Vous pouvez supprimer la clé à tout moment depuis l'Assistant."
+                            ]
+                        )
+
+                        policySection(
+                            title: "4. Limites",
+                            lines: [
+                                "L'application est un outil de simulation informative.",
+                                "Elle ne remplace ni la déclaration officielle, ni un conseil fiscal professionnel."
+                            ]
+                        )
+                    }
+
+                    Divider()
+
+                    Text("Privacy Summary (EN)")
+                        .font(.headline)
+
+                    policySection(
+                        title: "Data and usage",
+                        lines: [
+                            "The app runs mostly on-device.",
+                            "AI is optional and requires your own OpenAI API key.",
+                            "This app is a tax estimate helper, not an official filing service."
+                        ]
+                    )
+                }
+                .padding()
+            }
+            .navigationTitle("Confidentialité")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Fermer") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func policySection(title: String, lines: [String]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(.blue)
+            ForEach(lines, id: \.self) { line in
+                HStack(alignment: .top, spacing: 8) {
+                    Text("•")
+                        .foregroundStyle(.secondary)
+                    Text(line)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
     }
 }

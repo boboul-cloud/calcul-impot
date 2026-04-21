@@ -187,13 +187,17 @@ final class TaxConfigLoader {
     var isRemote = false
     var isLoading = false
     var lastUpdate: Date?
+    var remoteSourceLabel: String?
     var refreshResult: RefreshResult?
 
     enum RefreshResult { case success, noChange, error(String) }
 
-    // Change this URL to your hosted JSON config
-    // e.g. https://raw.githubusercontent.com/<user>/<repo>/main/tax_config.json
-    private let remoteURL = URL(string: "https://raw.githubusercontent.com/boboul-cloud/tax-config/main/tax_config.json")
+    // Primary + fallback source for remote tax configuration.
+    // Keep both URLs in sync if you publish through multiple channels.
+    private let remoteURLs: [URL] = [
+        URL(string: "https://raw.githubusercontent.com/boboul-cloud/tax-config/main/tax_config.json")!,
+        URL(string: "https://cdn.jsdelivr.net/gh/boboul-cloud/tax-config@main/tax_config.json")!
+    ]
 
     private let cacheKey = "cached_tax_config"
     private let cacheDateKey = "cached_tax_config_date"
@@ -226,20 +230,26 @@ final class TaxConfigLoader {
     }
 
     private func fetchRemote() async {
-        guard let url = remoteURL else { return }
         isLoading = true
         defer { isLoading = false }
-        do {
-            let (data, response) = try await URLSession.shared.data(from: url)
-            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { return }
-            let remote = try JSONDecoder().decode(TaxConfig.self, from: data)
-            config = remote
-            isRemote = true
-            lastUpdate = Date()
-            saveToCache(data)
-        } catch {
-            // Keep current config (cached or default)
+
+        for (index, url) in remoteURLs.enumerated() {
+            do {
+                let (data, response) = try await URLSession.shared.data(from: url)
+                guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { continue }
+                let remote = try JSONDecoder().decode(TaxConfig.self, from: data)
+                config = remote
+                isRemote = true
+                lastUpdate = Date()
+                remoteSourceLabel = index == 0 ? "Source principale" : "Source de secours"
+                saveToCache(data)
+                return
+            } catch {
+                continue
+            }
         }
+
+        // Keep current config (cached or default) if all remote sources fail.
     }
 
     private func loadFromCache() -> TaxConfig? {
