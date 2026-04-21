@@ -3757,6 +3757,15 @@ struct PrivacyPolicySheet: View {
     @Environment(\.dismiss) private var dismiss
     private let promoURL = URL(string: "https://boboul-cloud.github.io/calcul-impot/")
     private let privacyURL = URL(string: "https://boboul-cloud.github.io/calcul-impot/privacy-policy.html")
+    private let developerName = "Robert Oulhen"
+
+    private var marketingVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+    }
+
+    private var buildVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
+    }
 
     var body: some View {
         NavigationStack {
@@ -3823,6 +3832,18 @@ struct PrivacyPolicySheet: View {
 
                     Divider()
 
+                    policySection(
+                        title: "5. À propos",
+                        lines: [
+                            "Application : Calcul de l'impot",
+                            "Version : \(marketingVersion) (build \(buildVersion))",
+                            "Développeur : \(developerName)",
+                            "© 2026 \(developerName). Tous droits réservés."
+                        ]
+                    )
+
+                    Divider()
+
                     Text("Privacy Summary (EN)")
                         .font(.headline)
 
@@ -3832,6 +3853,16 @@ struct PrivacyPolicySheet: View {
                             "The app runs mostly on-device.",
                             "AI is optional and requires your own OpenAI API key.",
                             "This app is a tax estimate helper, not an official filing service."
+                        ]
+                    )
+
+                    policySection(
+                        title: "About",
+                        lines: [
+                            "App: Calcul de l'impot",
+                            "Version: \(marketingVersion) (build \(buildVersion))",
+                            "Developer: \(developerName)",
+                            "© 2026 \(developerName). All rights reserved."
                         ]
                     )
                 }
