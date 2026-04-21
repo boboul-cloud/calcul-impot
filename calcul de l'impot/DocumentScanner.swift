@@ -334,7 +334,7 @@ enum TaxDocumentParser {
     /// Returns the LARGEST matching amount from the text to avoid partial matches (444,38 instead of 1 444,38).
     private static func extractMonetaryAmount(from text: String) -> Double? {
         let patterns = [
-            #"(\d{1,3}(?:[\s\u{00A0}]\d{3})+[,\.]\d{2})"#,  // 1 444,38
+            #"(\d{1,3}(?:\s\d{3})+[,\.]\d{2})"#,  // 1 444,38
             #"(\d+[,\.]\d{2})"#,                                // 1444,38 or 131,44
             #"(\d{1,3}(?:\.\d{3})+,\d{2})"#                    // 1.444,38
         ]
@@ -364,7 +364,7 @@ enum TaxDocumentParser {
     private static func extractAmount(from text: String) -> Double? {
         // Match patterns like: 35 000, 35000, 35 000,00, 35000.00, 35.000,00
         let patterns = [
-            #"(\d{1,3}(?:[\s\u{00A0}]\d{3})+(?:[,\.]\d{2})?)"#,  // 35 000 or 35 000,00
+            #"(\d{1,3}(?:\s\d{3})+(?:[,\.]\d{2})?)"#,  // 35 000 or 35 000,00
             #"(\d{4,}(?:[,\.]\d{2})?)"#,                            // 35000 or 35000.00
             #"(\d{1,3}(?:\.\d{3})+(?:,\d{2})?)"#                   // 35.000,00
         ]
