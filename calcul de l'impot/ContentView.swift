@@ -2137,7 +2137,6 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, alignment: isAssistant ? .leading : .trailing)
     }
 
-    @ViewBuilder
     private func declarantIncomeSection(
         declarant: Int?,
         incomeText: Binding<String>,
@@ -2148,74 +2147,77 @@ struct ContentView: View {
         fraisFieldTag: Field,
         sourceFieldTag: Field,
         kmTarget: KmTarget
-    ) -> some View {
+    ) -> AnyView {
         let label = declarant.map { "Déclarant \($0)" } ?? ""
-
-        // Income
-        VStack(alignment: .leading, spacing: 6) {
-            Text(declarant != nil ? "Net imposable — \(label)" : "Net imposable annuel")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            incomeField(text: incomeText, field: incomeFieldTag)
-        }
-
-        // Deduction type picker
-        VStack(alignment: .leading, spacing: 8) {
-            Picker(declarant != nil ? "Déduction — \(label)" : "Déduction", selection: deductionType) {
-                Text("Abattement 10 %").tag(DeductionType.abattement)
-                Text("Frais réels").tag(DeductionType.fraisReels)
-            }
-            .pickerStyle(.segmented)
-
-            if deductionType.wrappedValue == .abattement {
-                let d = config.deduction
-                Label("Abattement de \(Int(d.rate * 100)) % appliqué automatiquement (min \(TaxEngine.cur(d.min)), max \(TaxEngine.cur(d.max)))", systemImage: "info.circle")
-                    .font(.caption2)
-                    .foregroundStyle(.blue)
-            }
-        }
-
-        // Frais réels (if selected)
-        if deductionType.wrappedValue == .fraisReels {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text(declarant != nil ? "Frais réels — \(label)" : "Frais réels annuels")
+        return AnyView(
+            VStack(alignment: .leading, spacing: 12) {
+                // Income
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(declarant != nil ? "Net imposable — \(label)" : "Net imposable annuel")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
-                    Spacer()
-                    Button {
-                        showKmCalculator = kmTarget
-                    } label: {
-                        Label("Frais km", systemImage: "car.fill")
-                            .font(.caption)
+                    incomeField(text: incomeText, field: incomeFieldTag)
+                }
+
+                // Deduction type picker
+                VStack(alignment: .leading, spacing: 8) {
+                    Picker(declarant != nil ? "Déduction — \(label)" : "Déduction", selection: deductionType) {
+                        Text("Abattement 10 %").tag(DeductionType.abattement)
+                        Text("Frais réels").tag(DeductionType.fraisReels)
+                    }
+                    .pickerStyle(.segmented)
+
+                    if deductionType.wrappedValue == .abattement {
+                        let d = config.deduction
+                        Label("Abattement de \(Int(d.rate * 100)) % appliqué automatiquement (min \(TaxEngine.cur(d.min)), max \(TaxEngine.cur(d.max)))", systemImage: "info.circle")
+                            .font(.caption2)
+                            .foregroundStyle(.blue)
                     }
                 }
-                incomeField(text: fraisReelsText, field: fraisFieldTag)
+
+                // Frais réels (if selected)
+                if deductionType.wrappedValue == .fraisReels {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text(declarant != nil ? "Frais réels — \(label)" : "Frais réels annuels")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button {
+                                showKmCalculator = kmTarget
+                            } label: {
+                                Label("Frais km", systemImage: "car.fill")
+                                    .font(.caption)
+                            }
+                        }
+                        incomeField(text: fraisReelsText, field: fraisFieldTag)
+                    }
+                }
+
+                // Calculation breakdown
+                deductionDetailView(
+                    grossAmount: parseAmount(incomeText.wrappedValue),
+                    deductionType: deductionType.wrappedValue,
+                    fraisReels: parseAmount(fraisReelsText.wrappedValue)
+                )
+
+                // Withholding tax
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(declarant != nil ? "Prélèvement à la source — \(label)" : "Prélèvement à la source déjà réglé")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    incomeField(text: sourceText, field: sourceFieldTag)
+
+                    // Estimated withholding suggestion
+                    withholdingSuggestion(
+                        grossAmount: parseAmount(incomeText.wrappedValue),
+                        deductionType: deductionType.wrappedValue,
+                        fraisReels: parseAmount(fraisReelsText.wrappedValue),
+                        sourceText: sourceText
+                    )
+                }
             }
-        }
-
-        // Calculation breakdown
-        deductionDetailView(
-            grossAmount: parseAmount(incomeText.wrappedValue),
-            deductionType: deductionType.wrappedValue,
-            fraisReels: parseAmount(fraisReelsText.wrappedValue)
         )
-
-        // Withholding tax
-        VStack(alignment: .leading, spacing: 6) {
-            Text(declarant != nil ? "Prélèvement à la source — \(label)" : "Prélèvement à la source déjà réglé")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            incomeField(text: sourceText, field: sourceFieldTag)
-
-            // Estimated withholding suggestion
-            withholdingSuggestion(
-                grossAmount: parseAmount(incomeText.wrappedValue),
-                deductionType: deductionType.wrappedValue,
-                fraisReels: parseAmount(fraisReelsText.wrappedValue),
-                sourceText: sourceText
-            )
-        }
     }
 
     // MARK: - Helpers
