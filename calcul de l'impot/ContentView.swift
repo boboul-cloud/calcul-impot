@@ -1979,12 +1979,12 @@ struct ContentView: View {
             }
 
             HStack(spacing: 12) {
-                Link(destination: URL(string: "https://boboul-cloud.github.io/calcul-de-l-impot/")!) {
+                Link(destination: URL(string: "https://boboul-cloud.github.io/calcul-impot/")!) {
                     Label("Page web", systemImage: "globe")
                         .font(.caption.weight(.semibold))
                 }
 
-                Link(destination: URL(string: "https://boboul-cloud.github.io/calcul-de-l-impot/privacy-policy.html")!) {
+                Link(destination: URL(string: "https://boboul-cloud.github.io/calcul-impot/privacy-policy.html")!) {
                     Label("Politique en ligne", systemImage: "safari")
                         .font(.caption.weight(.semibold))
                 }
@@ -3755,8 +3755,8 @@ struct CreditHelpSheet: View {
 
 struct PrivacyPolicySheet: View {
     @Environment(\.dismiss) private var dismiss
-    private let promoURL = URL(string: "https://boboul-cloud.github.io/calcul-de-l-impot/")
-    private let privacyURL = URL(string: "https://boboul-cloud.github.io/calcul-de-l-impot/privacy-policy.html")
+    private let promoURL = URL(string: "https://boboul-cloud.github.io/calcul-impot/")
+    private let privacyURL = URL(string: "https://boboul-cloud.github.io/calcul-impot/privacy-policy.html")
 
     var body: some View {
         NavigationStack {
