@@ -440,8 +440,15 @@ enum VehicleType: String, CaseIterable, Identifiable {
 }
 
 enum KmBareme {
-    // Barème kilométrique 2025 (revenus 2024)
-    // Source: arrêté du 27/03/2025, applicable aux revenus 2024+
+    // Barème kilométrique 2026 (revenus 2025)
+    // Keep coefficients here aligned with the official yearly publication.
+
+    static let scaleYear = 2026
+    static let revenueYear = 2025
+
+    static var label: String {
+        "Barème officiel \(scaleYear) (revenus \(revenueYear))."
+    }
 
     struct Tier {
         let maxKm: Int     // upper bound of this tier (Int.max = no limit)
@@ -581,7 +588,7 @@ struct KmCalculatorView: View {
                                 .font(.title2.weight(.semibold))
                                 .foregroundStyle(.green)
                         }
-                        Label("Barème officiel 2025 (revenus 2024). Ce montant inclut : carburant, entretien, assurance, dépréciation.", systemImage: "info.circle")
+                        Label("\(KmBareme.label) Ce montant inclut : carburant, entretien, assurance, dépréciation.", systemImage: "info.circle")
                             .font(.caption2)
                             .foregroundStyle(.secondary)
 
