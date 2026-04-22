@@ -147,6 +147,51 @@ struct TaxConfig: Codable, Equatable {
     let deduction: DeductionConfig
     let credits: CreditsConfig
     let kmAllowance: KmAllowanceConfig?
+    // CSG déductible appliquée aux bulletins mensuels de pension/salaire
+    // (par défaut 5,9 % — sources : URSSAF / impots.gouv.fr)
+    var csgDeductibleRate: Double = 0.059
+
+    // Custom decoding to keep backward compatibility with payloads
+    // that don't carry the new csgDeductibleRate field.
+    private enum CodingKeys: String, CodingKey {
+        case year, revenueYear, label, legalReference, brackets,
+             ceilingPerHalfPart, ceilingParentIsole, decote, deduction,
+             credits, kmAllowance, csgDeductibleRate
+    }
+
+    init(year: Int, revenueYear: Int, label: String, legalReference: String,
+         brackets: [TaxBracketConfig], ceilingPerHalfPart: Double, ceilingParentIsole: Double,
+         decote: DecoteConfig, deduction: DeductionConfig, credits: CreditsConfig,
+         kmAllowance: KmAllowanceConfig?, csgDeductibleRate: Double = 0.059) {
+        self.year = year
+        self.revenueYear = revenueYear
+        self.label = label
+        self.legalReference = legalReference
+        self.brackets = brackets
+        self.ceilingPerHalfPart = ceilingPerHalfPart
+        self.ceilingParentIsole = ceilingParentIsole
+        self.decote = decote
+        self.deduction = deduction
+        self.credits = credits
+        self.kmAllowance = kmAllowance
+        self.csgDeductibleRate = csgDeductibleRate
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        year = try c.decode(Int.self, forKey: .year)
+        revenueYear = try c.decode(Int.self, forKey: .revenueYear)
+        label = try c.decode(String.self, forKey: .label)
+        legalReference = try c.decode(String.self, forKey: .legalReference)
+        brackets = try c.decode([TaxBracketConfig].self, forKey: .brackets)
+        ceilingPerHalfPart = try c.decode(Double.self, forKey: .ceilingPerHalfPart)
+        ceilingParentIsole = try c.decode(Double.self, forKey: .ceilingParentIsole)
+        decote = try c.decode(DecoteConfig.self, forKey: .decote)
+        deduction = try c.decode(DeductionConfig.self, forKey: .deduction)
+        credits = try c.decode(CreditsConfig.self, forKey: .credits)
+        kmAllowance = try c.decodeIfPresent(KmAllowanceConfig.self, forKey: .kmAllowance)
+        csgDeductibleRate = try c.decodeIfPresent(Double.self, forKey: .csgDeductibleRate) ?? 0.059
+    }
 
     static let `default` = TaxConfig(
         year: 2026,

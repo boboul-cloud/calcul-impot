@@ -11,6 +11,54 @@ import VisionKit
 import PhotosUI
 import PDFKit
 import UniformTypeIdentifiers
+import Security
+
+// MARK: - Keychain helper (secure storage for sensitive credentials)
+
+enum SecureStore {
+    private static let service = "com.calculimpot.secrets"
+
+    static func read(_ key: String) -> String? {
+        let query: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecAttrAccount: key,
+            kSecReturnData: true,
+            kSecMatchLimit: kSecMatchLimitOne
+        ]
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        guard status == errSecSuccess,
+              let data = item as? Data,
+              let value = String(data: data, encoding: .utf8) else { return nil }
+        return value
+    }
+
+    @discardableResult
+    static func write(_ value: String, for key: String) -> Bool {
+        let baseQuery: [CFString: Any] = [
+            kSecClass: kSecClassGenericPassword,
+            kSecAttrService: service,
+            kSecAttrAccount: key
+        ]
+        if value.isEmpty {
+            SecItemDelete(baseQuery as CFDictionary)
+            return true
+        }
+        guard let data = value.data(using: .utf8) else { return false }
+        let attrs: [CFString: Any] = [
+            kSecValueData: data,
+            kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        ]
+        let status = SecItemUpdate(baseQuery as CFDictionary, attrs as CFDictionary)
+        if status == errSecItemNotFound {
+            var addQuery = baseQuery
+            addQuery.merge(attrs) { _, new in new }
+            return SecItemAdd(addQuery as CFDictionary, nil) == errSecSuccess
+        }
+        return status == errSecSuccess
+    }
+}
 
 // MARK: - Extracted Data
 
@@ -38,12 +86,35 @@ struct ExtractedTaxData {
 // MARK: - AI Tax Parser (OpenAI)
 
 enum AITaxParser {
+    private static let keychainKey = "openai_api_key"
+    private static let legacyDefaultsKey = "openai_api_key"
+    private static let migrationFlag = "openai_api_key_migrated_to_keychain"
+
     static var apiKey: String {
-        get { UserDefaults.standard.string(forKey: "openai_api_key") ?? "" }
-        set { UserDefaults.standard.set(newValue, forKey: "openai_api_key") }
+        get {
+            // One-shot migration from UserDefaults → Keychain for existing installs.
+            if !UserDefaults.standard.bool(forKey: migrationFlag),
+               let legacy = UserDefaults.standard.string(forKey: legacyDefaultsKey),
+               !legacy.isEmpty {
+                SecureStore.write(legacy, for: keychainKey)
+                UserDefaults.standard.removeObject(forKey: legacyDefaultsKey)
+                UserDefaults.standard.set(true, forKey: migrationFlag)
+                return legacy
+            }
+            return SecureStore.read(keychainKey) ?? ""
+        }
+        set {
+            SecureStore.write(newValue, for: keychainKey)
+            UserDefaults.standard.set(true, forKey: migrationFlag)
+        }
     }
 
     static var isAvailable: Bool { !apiKey.isEmpty }
+
+    /// CSG déductible rate used when computing the imposable amount
+    /// from a monthly gross figure. Injected by the UI layer so it stays
+    /// in sync with the loaded TaxConfig.
+    nonisolated(unsafe) static var csgRate: Double = 0.059
 
     static func parse(text: String) async -> ExtractedTaxData? {
         guard isAvailable else { return nil }
@@ -130,7 +201,7 @@ enum AITaxParser {
         } else {
             // Monthly pension/salary bulletin: total_brut includes CSG → subtract it
             if let brut = result["total_brut"] as? Double {
-                let montantImposable = brut * (1 - 0.059)  // CSG déductible = 5.9%
+                let montantImposable = brut * (1 - csgRate)
                 extracted.revenuBrut = montantImposable * multiplier
             }
         }
@@ -146,6 +217,10 @@ enum AITaxParser {
 // MARK: - OCR Parser
 
 enum TaxDocumentParser {
+
+    /// CSG d\u00e9ductible rate used by the regex fallback parser. Kept in
+    /// sync with the loaded TaxConfig from the UI layer.
+    nonisolated(unsafe) static var csgRate: Double = 0.059
 
     static func parse(text: String) -> ExtractedTaxData {
         let lines = text.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
@@ -230,7 +305,7 @@ enum TaxDocumentParser {
             // Total brut = highest monetary amount in the document
             if let maxAmount = allMonetary.max() {
                 // Always deduct CSG: use found value, or apply 5.9% rate
-                let csg = csgDeductible ?? (maxAmount * 0.059)
+                let csg = csgDeductible ?? (maxAmount * Self.csgRate)
                 data.revenuBrut = maxAmount - csg
             }
         }
@@ -334,7 +409,7 @@ enum TaxDocumentParser {
     /// Returns the LARGEST matching amount from the text to avoid partial matches (444,38 instead of 1 444,38).
     private static func extractMonetaryAmount(from text: String) -> Double? {
         let patterns = [
-            #"(\d{1,3}(?:\s\d{3})+[,\.]\d{2})"#,  // 1 444,38
+            #"(\d{1,3}(?:[\s\u{00A0}]\d{3})+[,\.]\d{2})"#,  // 1 444,38
             #"(\d+[,\.]\d{2})"#,                                // 1444,38 or 131,44
             #"(\d{1,3}(?:\.\d{3})+,\d{2})"#                    // 1.444,38
         ]
@@ -364,7 +439,7 @@ enum TaxDocumentParser {
     private static func extractAmount(from text: String) -> Double? {
         // Match patterns like: 35 000, 35000, 35 000,00, 35000.00, 35.000,00
         let patterns = [
-            #"(\d{1,3}(?:\s\d{3})+(?:[,\.]\d{2})?)"#,  // 35 000 or 35 000,00
+            #"(\d{1,3}(?:[\s\u{00A0}]\d{3})+(?:[,\.]\d{2})?)"#,  // 35 000 or 35 000,00
             #"(\d{4,}(?:[,\.]\d{2})?)"#,                            // 35000 or 35000.00
             #"(\d{1,3}(?:\.\d{3})+(?:,\d{2})?)"#                   // 35.000,00
         ]

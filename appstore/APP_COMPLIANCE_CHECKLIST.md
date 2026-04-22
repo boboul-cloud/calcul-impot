@@ -23,6 +23,6 @@ Recommandation de depart:
 - Pas de tracking publicitaire.
 
 ## Avant envoi review
-- Verifier que tous les placeholders [A_COMPLETER] sont remplaces.
+- Verifier que l'email et le telephone de review sont bien renseignes dans App Store Connect.
 - Verifier URL support + URL privacy policy accessibles publiquement.
 - Verifier coherence entre App Privacy et comportement reel de l'app.

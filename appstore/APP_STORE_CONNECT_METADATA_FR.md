@@ -27,13 +27,13 @@ Cette application fournit une simulation informative. Elle ne remplace pas la de
 impot,fiscalite,declaration,simulation,revenu,quotient familial,decote,taxes,france
 
 ## URL de support
-[A_COMPLETER]
+https://github.com/boboul-cloud/calcul-impot/issues
 
 ## URL marketing (optionnel)
-[A_COMPLETER]
+https://boboul-cloud.github.io/calcul-impot/
 
 ## URL de politique de confidentialite
-[A_COMPLETER]
+https://boboul-cloud.github.io/calcul-impot/privacy-policy.html
 
 ## Categorie principale
 Finance

@@ -182,6 +182,12 @@ enum AITaxFormAssistant {
                 - Si une case 1xx à 5xx est citée, privilégie taxable_income.
                 - Si une case 8xx est citée, privilégie withholding_paid.
 
+        Règles fiscales importantes à respecter IMPÉRATIVEMENT:
+        - Frais engagés par un bénévole (dirigeant, entraîneur, responsable) d'une association (sport, football, culture...) : la SEULE case possible est 7UF, MAIS UNIQUEMENT si le bénévole renonce formellement au remboursement par l'association. Si remboursé → rien à déclarer. Si non remboursé et renonciation formelle → case 7UF (don assimilé, réduction 66 %, art. 200 CGI). JAMAIS 6DD. Dans le champ "why", préciser cette condition.
+        - Frais de péage, carburant, hébergement d'un bénévole = idem, case 7UF sous condition de renonciation au remboursement.
+        - Dons aux associations d'aide aux personnes en difficulté (Croix-Rouge, Restos du Cœur...) → case 7UD (75 %), kind=tax_credit.
+        - Dons aux autres associations d'intérêt général (sport, culture, éducation...) → case 7UF (66 %), kind=tax_credit.
+
         Demande utilisateur:
         \(query)
         """
@@ -279,6 +285,18 @@ enum AITaxFormAssistant {
         }
         if q.contains("emploi") || q.contains("domicile") {
             add("Emploi à domicile", "7DB", .taxCredit, "Crédit d'impôt services à la personne")
+        }
+        let isBenevoleFrais = q.contains("bénévole") || q.contains("benevole") || q.contains("dirigeant")
+            || q.contains("football") || q.contains("foot") || q.contains("sport") || q.contains("association")
+            || q.contains("péage") || q.contains("peage") || q.contains("frais kilométrique")
+            || q.contains("frais kilometrique") || q.contains("entraîneur") || q.contains("entraineur")
+        if isBenevoleFrais {
+            add(
+                "Frais de bénévole — case 7UF (sous condition)",
+                "7UF",
+                .taxCredit,
+                "Case 7UF applicable UNIQUEMENT si vous renoncez formellement au remboursement par l'association. Les frais deviennent alors un don assimilé (art. 200 CGI, réduction 66 %). Si vous êtes remboursé, rien à déclarer."
+            )
         }
 
         if entries.isEmpty {
@@ -836,7 +854,15 @@ struct ContentView: View {
                 }
             }
             .onTapGesture { focusedField = nil }
-            .task { await configLoader.load() }
+            .task {
+                await configLoader.load()
+                AITaxParser.csgRate = configLoader.config.csgDeductibleRate
+                TaxDocumentParser.csgRate = configLoader.config.csgDeductibleRate
+            }
+            .onChange(of: configLoader.config) { _, newConfig in
+                AITaxParser.csgRate = newConfig.csgDeductibleRate
+                TaxDocumentParser.csgRate = newConfig.csgDeductibleRate
+            }
             .fullScreenCover(isPresented: $showCamera) {
                 DocumentCameraView { imageDataArray in
                     pendingScanData = imageDataArray
@@ -1058,10 +1084,11 @@ struct ContentView: View {
         pageContainer {
             stagedCard(0, on: .overview) { pageIntroCard(.overview) }
             stagedCard(1, on: .overview) { overviewHeroCard }
-            stagedCard(2, on: .overview) { configCard }
-            stagedCard(3, on: .overview) { calculateButton }
+            stagedCard(2, on: .overview) { familySituationCard }
+            stagedCard(3, on: .overview) { configCard }
+            stagedCard(4, on: .overview) { calculateButton }
             if let result {
-                stagedCard(4, on: .overview) { resultCards(result) }
+                stagedCard(5, on: .overview) { resultCards(result) }
             }
         }
     }
@@ -1155,6 +1182,77 @@ struct ContentView: View {
             RoundedRectangle(cornerRadius: 18)
                 .stroke(Color.white.opacity(0.6), lineWidth: 1)
         )
+    }
+
+    private var familySituationCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Label("Situation du foyer", systemImage: "person.text.rectangle")
+                .font(.headline)
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Situation familiale")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    ForEach(FamilySituation.allCases) { s in
+                        Button {
+                            situation = s
+                        } label: {
+                            VStack(spacing: 4) {
+                                Image(systemName: s.icon)
+                                    .font(.callout)
+                                Text(s.rawValue)
+                                    .font(.caption2)
+                                    .lineLimit(1)
+                                    .minimumScaleFactor(0.7)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                            .background(situation == s ? Color.blue : Color(.systemGray5))
+                            .foregroundStyle(situation == s ? .white : .primary)
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                        }
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Enfants à charge")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 0) {
+                    ForEach(0...5, id: \.self) { n in
+                        Button {
+                            children = n
+                        } label: {
+                            Text("\(n)")
+                                .font(.callout.weight(.medium))
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 40)
+                                .background(children == n ? Color.blue : Color(.systemGray5))
+                                .foregroundStyle(children == n ? .white : .primary)
+                                .clipShape(Circle())
+                        }
+                    }
+                }
+            }
+
+            let parts = TaxEngine.calculateParts(situation: situation, children: children)
+            HStack {
+                Image(systemName: "person.2.circle")
+                    .foregroundStyle(.blue)
+                Text("Nombre de parts :")
+                    .foregroundStyle(.secondary)
+                Text(formatParts(parts))
+                    .fontWeight(.semibold)
+            }
+            .font(.callout)
+        }
+        .padding()
+        .background(.background)
+        .clipShape(RoundedRectangle(cornerRadius: 16))
+        .shadow(color: .black.opacity(0.06), radius: 8, y: 4)
     }
 
     private func heroMetric(title: String, value: String) -> some View {
@@ -1412,6 +1510,27 @@ struct ContentView: View {
                 Spacer()
             }
 
+            // Warn if the loaded scale year is older than the current year
+            // (a new tax declaration period likely started without app update).
+            let currentYear = Calendar.current.component(.year, from: Date())
+            if currentYear > config.year {
+                HStack(alignment: .top, spacing: 8) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Barème probablement obsolète")
+                            .font(.caption.weight(.semibold))
+                        Text("Le barème chargé est pour l'année \(String(config.year)). Touchez « Vérifier les mises à jour » ci-dessous pour récupérer la dernière version.")
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(10)
+                .background(Color.orange.opacity(0.12))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .accessibilityElement(children: .combine)
+            }
+
             // Refresh result feedback
             if let result = configLoader.refreshResult {
                 HStack(spacing: 6) {
@@ -1470,7 +1589,7 @@ struct ContentView: View {
             }
             .toggleStyle(.switch)
 
-            Link(destination: URL(string: "https://www.service-public.gouv.fr/particuliers/vosdroits/F1419")!) {
+            Link(destination: URL(string: "https://www.service-public.fr/particuliers/vosdroits/F1419")!) {
                 HStack {
                     Image(systemName: "safari")
                     Text("Voir le barème officiel")
@@ -1479,6 +1598,19 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
                 .background(Color(.systemGray5))
+                .foregroundStyle(.blue)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+
+            Link(destination: URL(string: "https://www.impots.gouv.fr/formulaire/2042/declaration-des-revenus")!) {
+                HStack {
+                    Image(systemName: "doc.text.fill")
+                    Text("Formulaire 2042 — impots.gouv.fr")
+                        .fontWeight(.medium)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(Color(.systemBlue).opacity(0.1))
                 .foregroundStyle(.blue)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
             }
@@ -1570,67 +1702,6 @@ struct ContentView: View {
                 }
             }
 
-            // Situation
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Situation familiale")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                HStack(spacing: 8) {
-                    ForEach(FamilySituation.allCases) { s in
-                        Button {
-                            situation = s
-                        } label: {
-                            VStack(spacing: 4) {
-                                Image(systemName: s.icon)
-                                    .font(.callout)
-                                Text(s.rawValue)
-                                    .font(.caption2)
-                                    .lineLimit(1)
-                                    .minimumScaleFactor(0.7)
-                            }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                            .background(situation == s ? Color.blue : Color(.systemGray5))
-                            .foregroundStyle(situation == s ? .white : .primary)
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                        }
-                    }
-                }
-            }
-
-            // Children
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Enfants à charge")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                HStack(spacing: 0) {
-                    ForEach(0...5, id: \.self) { n in
-                        Button {
-                            children = n
-                        } label: {
-                            Text("\(n)")
-                                .font(.callout.weight(.medium))
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 40)
-                                .background(children == n ? Color.blue : Color(.systemGray5))
-                                .foregroundStyle(children == n ? .white : .primary)
-                                .clipShape(Circle())
-                        }
-                    }
-                }
-            }
-
-            // Parts
-            let parts = TaxEngine.calculateParts(situation: situation, children: children)
-            HStack {
-                Image(systemName: "person.2.circle")
-                    .foregroundStyle(.blue)
-                Text("Nombre de parts :")
-                    .foregroundStyle(.secondary)
-                Text(formatParts(parts))
-                    .fontWeight(.semibold)
-            }
-            .font(.callout)
         }
         .padding()
         .background(.background)
@@ -1902,6 +1973,9 @@ struct ContentView: View {
                     .font(.title3.weight(.bold).monospacedDigit())
                     .foregroundStyle(.blue)
             }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Impôt net")
+            .accessibilityValue(TaxEngine.cur(r.taxAfterCredits))
 
             if totalWithholding > 0 {
                 Divider()
@@ -1917,6 +1991,9 @@ struct ContentView: View {
                         .font(.title3.weight(.bold).monospacedDigit())
                         .foregroundStyle(remainder >= 0 ? .orange : .green)
                 }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(remainder >= 0 ? "Reste à payer" : "Trop-perçu, remboursement")
+                .accessibilityValue(TaxEngine.cur(abs(remainder)))
             }
 
             HStack(spacing: 4) {
@@ -2018,7 +2095,6 @@ struct ContentView: View {
             Text("Décrivez votre situation pour proposer automatiquement des cases à remplir.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
                     Image(systemName: openAIKey.isEmpty ? "brain" : "brain.fill")
