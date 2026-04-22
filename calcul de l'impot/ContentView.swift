@@ -1589,7 +1589,7 @@ struct ContentView: View {
             }
             .toggleStyle(.switch)
 
-            Link(destination: URL(string: "https://www.service-public.fr/particuliers/vosdroits/F1419")!) {
+            Link(destination: URL(string: "https://www.economie.gouv.fr/particuliers/impots-et-fiscalite/gerer-mon-impot-sur-le-revenu/comment-calculer-votre-impot-dapres-le-bareme-de-limpot-sur-le-revenu")!) {
                 HStack {
                     Image(systemName: "safari")
                     Text("Voir le barème officiel")
