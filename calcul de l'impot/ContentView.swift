@@ -640,6 +640,7 @@ struct ContentView: View {
     @State private var showQuotientDetail = false
     @State private var showCalculator = false
     @State private var selectedCreditHelp: CreditHelpTopic?
+    @State private var showCasesBrowser: Bool = false
     @State private var additionalEntries: [AdditionalTaxEntry] = []
     @State private var taxChatInput = ""
     @State private var taxChatMessages: [TaxChatMessage] = [
@@ -833,6 +834,13 @@ struct ContentView: View {
                         Label("Calculatrice", systemImage: "plus.forwardslash.minus")
                     }
                 }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        showCasesBrowser = true
+                    } label: {
+                        Label("Cases déclaration", systemImage: "list.bullet.rectangle")
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         Task { await configLoader.forceRefresh() }
@@ -945,6 +953,9 @@ struct ContentView: View {
             }
             .sheet(isPresented: $showPrivacyPolicySheet) {
                 PrivacyPolicySheet()
+            }
+            .sheet(isPresented: $showCasesBrowser) {
+                CasesDeclarationView()
             }
             .overlay {
                 if scanProcessing {
@@ -2714,13 +2725,21 @@ struct ContentView: View {
         kmTarget: KmTarget
     ) -> AnyView {
         let label = declarant.map { "Déclarant \($0)" } ?? ""
+        // Cerfa codes: declarant 1 → AJ/AK/AS lines, declarant 2 → BJ/BK/BS lines.
+        let suffix = (declarant ?? 1) == 2 ? "B" : "A"
+        let incomeBox = "1\(suffix)J"        // salaires nets imposables
+        let fraisBox = "1\(suffix)K"         // frais réels
+        let sourceBox = "8\(suffix == "A" ? "HV" : "IV")"  // prélèvement à la source déjà retenu
         return AnyView(
             VStack(alignment: .leading, spacing: 12) {
                 // Income
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(declarant != nil ? "Net imposable — \(label)" : "Net imposable annuel")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        Text(declarant != nil ? "Net imposable — \(label)" : "Net imposable annuel")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        CaseHelpBadge(code: incomeBox)
+                    }
                     incomeField(text: incomeText, field: incomeFieldTag)
                 }
 
@@ -2747,6 +2766,7 @@ struct ContentView: View {
                             Text(declarant != nil ? "Frais réels — \(label)" : "Frais réels annuels")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
+                            CaseHelpBadge(code: fraisBox)
                             Spacer()
                             Button {
                                 showKmCalculator = kmTarget
@@ -2768,9 +2788,12 @@ struct ContentView: View {
 
                 // Withholding tax
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(declarant != nil ? "Prélèvement à la source — \(label)" : "Prélèvement à la source déjà réglé")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        Text(declarant != nil ? "Prélèvement à la source — \(label)" : "Prélèvement à la source déjà réglé")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                        CaseHelpBadge(code: sourceBox)
+                    }
                     incomeField(text: sourceText, field: sourceFieldTag)
 
                     // Estimated withholding suggestion
