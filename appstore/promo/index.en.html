@@ -224,6 +224,48 @@
     .line.green { background: linear-gradient(90deg, rgba(15, 157, 129, 0.34), rgba(15, 157, 129, 0.13)); }
     .line.orange { background: linear-gradient(90deg, rgba(255, 123, 45, 0.34), rgba(255, 123, 45, 0.13)); }
 
+    .ui-steps { display: flex; gap: 6px; margin-bottom: 4px; }
+    .ui-step { flex: 1; height: 4px; border-radius: 4px; background: #e8eefb; }
+    .ui-step.active { background: linear-gradient(90deg, var(--primary), var(--primary-2)); }
+    .ui-section-title { font-size: 0.72rem; font-weight: 700; color: var(--ink); margin-top: 4px; letter-spacing: 0.02em; }
+    .ui-card {
+      border: 1px solid #e5ebf7;
+      border-radius: 10px;
+      padding: 8px 10px;
+      background: #fbfcff;
+      display: grid;
+      gap: 6px;
+    }
+    .ui-row { display: flex; align-items: center; justify-content: space-between; font-size: 0.78rem; color: #2a3654; }
+    .ui-row .label { color: #5d6f8d; }
+    .ui-row .value { font-weight: 600; color: var(--ink); font-variant-numeric: tabular-nums; }
+    .ui-row.bracket .label { display: flex; align-items: center; gap: 6px; }
+    .ui-row.bracket .label::before {
+      content: "";
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--primary);
+    }
+    .ui-row.bracket.b2 .label::before { background: var(--primary-2); }
+    .ui-row.bracket.b3 .label::before { background: var(--accent); }
+    .ui-total {
+      display: flex; align-items: baseline; justify-content: space-between;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, rgba(23,104,255,0.10), rgba(15,157,129,0.10));
+      border: 1px solid rgba(23,104,255,0.18);
+    }
+    .ui-total .label { font-size: 0.75rem; color: #2a3654; font-weight: 600; }
+    .ui-total .value { font-size: 1.05rem; font-weight: 800; color: var(--primary); font-variant-numeric: tabular-nums; }
+    .ui-cta {
+      text-align: center;
+      padding: 8px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, var(--primary), var(--primary-2));
+      color: #fff;
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+
     section {
       margin-top: 18px;
       background: var(--card);
@@ -396,14 +438,29 @@
         <div class="screen">
           <div class="screen-head">UI preview - Calcul de l'impot</div>
           <div class="screen-body">
-            <div class="line blue" style="width: 62%"></div>
-            <div class="line" style="width: 100%"></div>
-            <div class="line" style="width: 93%"></div>
-            <div class="line green" style="width: 88%"></div>
-            <div class="line" style="width: 100%"></div>
-            <div class="line orange" style="width: 54%"></div>
-            <div class="line" style="width: 75%"></div>
-            <div class="line blue" style="width: 70%"></div>
+            <div class="ui-steps" aria-hidden="true">
+              <div class="ui-step active"></div>
+              <div class="ui-step active"></div>
+              <div class="ui-step active"></div>
+              <div class="ui-step"></div>
+            </div>
+            <div class="ui-section-title">Income</div>
+            <div class="ui-card">
+              <div class="ui-row"><span class="label">Salary (1AJ)</span><span class="value">EUR 42,000</span></div>
+              <div class="ui-row"><span class="label">Actual expenses (1AK)</span><span class="value">EUR 1,800</span></div>
+              <div class="ui-row"><span class="label">Tax shares</span><span class="value">2.5</span></div>
+            </div>
+            <div class="ui-section-title">Bracket breakdown</div>
+            <div class="ui-card">
+              <div class="ui-row bracket"><span class="label">11%</span><span class="value">EUR 1,240</span></div>
+              <div class="ui-row bracket b2"><span class="label">30%</span><span class="value">EUR 2,105</span></div>
+              <div class="ui-row bracket b3"><span class="label">Discount</span><span class="value">- EUR 215</span></div>
+            </div>
+            <div class="ui-total">
+              <span class="label">Estimated net tax</span>
+              <span class="value">EUR 3,130</span>
+            </div>
+            <div class="ui-cta">Export PDF</div>
           </div>
         </div>
       </div>

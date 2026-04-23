@@ -4167,11 +4167,18 @@ struct MiniCalculatorView: View {
             }
         case .percent:
             if let v = parseDisplay() {
-                if pendingOp != nil {
-                    // 90 - 10% → 10% of 90 = 9
-                    display = formatResult(accumulator * v / 100)
+                if let pending = pendingOp {
+                    // iOS-style: 20400 − 10% → 20400 − (10% of 20400) = 18360
+                    let percentValue = accumulator * v / 100
+                    let result = compute(accumulator, pending, percentValue)
+                    history.append("\(formatResult(accumulator)) \(pending) \(formatResult(v))% = \(formatResult(result))")
+                    display = formatResult(result)
+                    accumulator = result
+                    pendingOp = nil
+                    resetOnNext = true
                 } else {
                     display = formatResult(v / 100)
+                    resetOnNext = true
                 }
             }
         case .op(let op):
